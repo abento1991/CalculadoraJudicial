@@ -176,100 +176,81 @@
 
   <!-- ============ ABAS ============ -->
   <div class="tabs" id="tabs">
-    <button class="tab-btn active" data-tab="ativo">A · Dados do ativo</button>
-    <button class="tab-btn" data-tab="indices">B · Índices históricos</button>
-    <button class="tab-btn" data-tab="proj">C · Projeções macro</button>
-    <button class="tab-btn" data-tab="muni">D · Prec. municipais/estaduais</button>
-    <button class="tab-btn" data-tab="fed">E · Prec. federais</button>
-    <button class="tab-btn" data-tab="ativojud">F · Ativos judiciais</button>
-    <button class="tab-btn" data-tab="ec136">EC 136/25</button>
+    <button class="tab-btn active" data-tab="m1">1 · Ativos judiciais</button>
+    <button class="tab-btn" data-tab="m2">2 · Prec. municipais/estaduais</button>
+    <button class="tab-btn" data-tab="m3">3 · Prec. federais</button>
+    <button class="tab-btn" data-tab="indices">Índices &amp; Projeções</button>
     <button class="tab-btn" data-tab="result">Resultados</button>
   </div>
 
   <!-- ===================================================== -->
-  <!-- MÓDULO A — DADOS DO ATIVO                             -->
+  <!-- MÓDULO 1 — ATIVOS JUDICIAIS · identificação + dados   -->
   <!-- ===================================================== -->
-  <section class="tab-panel active" data-tab="ativo">
+  <section class="tab-panel active" data-tab="m1">
     <div class="card">
-      <h2>Módulo A — Dados do ativo</h2>
-      <p class="desc">Identificação do crédito. Estes dados alimentam todos os módulos de cálculo.</p>
+      <h2>Módulo 1 — Ativos judiciais <span class="small muted">(crédito ainda não inscrito em precatório)</span></h2>
+      <p class="desc">Identificação e dados do ativo. O cálculo (correção + juros + valor presente) fica no card abaixo.</p>
       <div class="grid">
-        <div class="field">
-          <label>Tipo de ativo</label>
-          <select id="a_tipo">
-            <option value="prec_muni">Precatório municipal/estadual</option>
-            <option value="prec_fed">Precatório federal</option>
-            <option value="ativo_jud">Ativo judicial (não inscrito)</option>
-          </select>
+        <div class="field"><label>Nome da parte / causa</label><input id="aj_nome" placeholder="Ex.: Fulano x Empresa"/></div>
+        <div class="field"><label>Tribunal</label><input id="aj_tribunal" placeholder="Ex.: TJSP"/></div>
+        <div class="field"><label>Nº do processo</label><input id="aj_processo" placeholder="0000000-00.0000.0.00.0000"/></div>
+        <div class="field"><label>Natureza</label>
+          <select id="aj_natureza"><option value="alimentar">Alimentar</option><option value="comum">Comum</option><option value="indenizatorio">Indenizatório</option><option value="trab_prev">Trabalhista/previdenciário</option><option value="tributario">Tributário</option><option value="outros">Outros</option></select>
         </div>
-        <div class="field">
-          <label>Ente devedor</label>
-          <select id="a_ente">
-            <option value="uniao">União</option>
-            <option value="estado">Estado</option>
-            <option value="municipio">Município</option>
-            <option value="autarquia">Autarquia/fundação/outro</option>
-          </select>
+        <div class="field"><label>Valor base / histórico (R$)</label><input id="aj_valor" type="number" step="0.01" min="0" placeholder="100000.00"/><span class="err">Valor deve ser maior que zero.</span></div>
+        <div class="field"><label>Data-base do valor</label><input id="aj_data_base" type="date"/><span class="err">Data-base inválida.</span></div>
+        <div class="field"><label>Data final do cálculo (corte)</label><input id="aj_data_corte" type="date"/><span class="err">Data de corte anterior à data-base.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <!-- MÓDULO 2 — PREC. MUNICIPAIS/ESTADUAIS · identificação -->
+  <!-- ===================================================== -->
+  <section class="tab-panel" data-tab="m2">
+    <div class="card">
+      <h2>Módulo 2 — Precatórios municipais/estaduais</h2>
+      <p class="desc">Identificação e valor do precatório. Os dados de fila/RCL e os parâmetros da EC 136/25 ficam nos cards abaixo.</p>
+      <div class="grid">
+        <div class="field"><label>Ente devedor</label>
+          <select id="mu_ente"><option value="estado">Estado</option><option value="municipio">Município</option><option value="autarquia">Autarquia/fundação</option></select>
         </div>
-        <div class="field">
-          <label>Nome do ente devedor</label>
-          <input id="a_nome_ente" placeholder="Ex.: Estado de SP" />
+        <div class="field"><label>Nome do ente</label><input id="mu_nome" placeholder="Ex.: Estado de SP"/></div>
+        <div class="field"><label>Tribunal</label><input id="mu_tribunal" placeholder="Ex.: TJSP"/></div>
+        <div class="field"><label>Nº do precatório</label><input id="mu_processo" placeholder="0000000-00.0000.0.00.0000"/></div>
+        <div class="field"><label>Natureza</label>
+          <select id="mu_natureza"><option value="alimentar">Alimentar</option><option value="comum">Comum</option><option value="indenizatorio">Indenizatório</option><option value="trab_prev">Trabalhista/previdenciário</option><option value="tributario">Tributário</option><option value="outros">Outros</option></select>
         </div>
-        <div class="field">
-          <label>Tribunal</label>
-          <input id="a_tribunal" placeholder="Ex.: TJSP / TRF3" />
+        <div class="field"><label>Ano de orçamento</label><input id="mu_ano_orc" type="number" min="2000" max="2100" placeholder="2026"/><span class="err">Informe o ano de orçamento.</span></div>
+        <div class="field"><label>Valor base do precatório (R$)</label><input id="mu_valor" type="number" step="0.01" min="0" placeholder="100000.00"/><span class="err">Valor deve ser maior que zero.</span></div>
+        <div class="field"><label>Data-base do valor</label><input id="mu_data_base" type="date"/><span class="err">Data-base inválida.</span></div>
+        <div class="field"><label>Data final do cálculo (corte)</label><input id="mu_data_corte" type="date"/><span class="err">Data de corte anterior à data-base.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <!-- MÓDULO 3 — PREC. FEDERAIS · identificação             -->
+  <!-- ===================================================== -->
+  <section class="tab-panel" data-tab="m3">
+    <div class="card">
+      <h2>Módulo 3 — Precatórios federais</h2>
+      <p class="desc">Identificação e valor do precatório federal. O cálculo (correção, juros, cenários) fica no card abaixo.</p>
+      <div class="grid">
+        <div class="field"><label>Ente devedor</label>
+          <select id="fe_ente"><option value="uniao">União</option><option value="autarquia">Autarquia/fundação federal</option></select>
         </div>
-        <div class="field">
-          <label>Nº do processo/precatório</label>
-          <input id="a_processo" placeholder="0000000-00.0000.0.00.0000" />
+        <div class="field"><label>Nome do ente</label><input id="fe_nome" placeholder="Ex.: União / INSS"/></div>
+        <div class="field"><label>Tribunal</label><input id="fe_tribunal" placeholder="Ex.: TRF3"/></div>
+        <div class="field"><label>Nº do precatório</label><input id="fe_processo" placeholder="0000000-00.0000.0.00.0000"/></div>
+        <div class="field"><label>Natureza</label>
+          <select id="fe_natureza"><option value="alimentar">Alimentar</option><option value="comum">Comum</option><option value="indenizatorio">Indenizatório</option><option value="trab_prev">Trabalhista/previdenciário</option><option value="tributario">Tributário</option><option value="outros">Outros</option></select>
         </div>
-        <div class="field">
-          <label>Natureza</label>
-          <select id="a_natureza">
-            <option value="alimentar">Alimentar</option>
-            <option value="comum">Comum</option>
-            <option value="tributario">Tributário</option>
-            <option value="indenizatorio">Indenizatório</option>
-            <option value="trab_prev">Trabalhista/previdenciário</option>
-            <option value="outros">Outros</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Valor base (R$)</label>
-          <input id="a_valor" type="number" step="0.01" min="0" placeholder="100000.00" />
-          <span class="err">Valor deve ser maior que zero.</span>
-        </div>
-        <div class="field">
-          <label>Data-base do valor</label>
-          <input id="a_data_base" type="date" />
-          <span class="err">Data-base inválida.</span>
-        </div>
-        <div class="field">
-          <label>Data de expedição do precatório</label>
-          <input id="a_data_exped" type="date" />
-        </div>
-        <div class="field">
-          <label>Ano de orçamento</label>
-          <input id="a_ano_orc" type="number" min="2000" max="2100" placeholder="2026" />
-          <span class="err">Informe o ano de orçamento.</span>
-        </div>
-        <div class="field">
-          <label>Tipo do ano de orçamento</label>
-          <select id="a_ano_orc_tipo">
-            <option value="manual">Manual</option>
-            <option value="premissa">Premissa</option>
-            <option value="realizado">Realizado</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Data esperada de pagamento</label>
-          <input id="a_data_pgto" type="date" />
-        </div>
-        <div class="field">
-          <label>Data de corte para atualização</label>
-          <input id="a_data_corte" type="date" />
-          <span class="err">Data de corte anterior à data-base.</span>
-        </div>
+        <div class="field"><label>Ano de orçamento</label><input id="fe_ano_orc" type="number" min="2000" max="2100" placeholder="2026"/><span class="err">Informe o ano de orçamento.</span></div>
+        <div class="field"><label>Valor base / original (R$)</label><input id="fe_valor" type="number" step="0.01" min="0" placeholder="100000.00"/><span class="err">Valor deve ser maior que zero.</span></div>
+        <div class="field"><label>Data-base do valor</label><input id="fe_data_base" type="date"/><span class="err">Data-base inválida.</span></div>
+        <div class="field"><label>Data final do cálculo (corte)</label><input id="fe_data_corte" type="date"/><span class="err">Data de corte anterior à data-base.</span></div>
+        <div class="field"><label>Data esperada de pagamento</label><input id="fe_data_pgto" type="date"/></div>
       </div>
     </div>
   </section>
@@ -324,9 +305,9 @@
   <!-- ===================================================== -->
   <!-- MÓDULO C — PROJEÇÕES MACRO                            -->
   <!-- ===================================================== -->
-  <section class="tab-panel" data-tab="proj">
+  <section class="tab-panel" data-tab="indices">
     <div class="card">
-      <h2>Módulo C — Projeções macro <span class="tag tag-mock">mock/demo</span></h2>
+      <h2>Projeções macro <span class="tag tag-mock">mock/demo</span></h2>
       <p class="desc">
         Projeções anuais de Selic, IPCA, INPC e IPCA-E. Escolha a origem por linha. Valores iniciais são
         <strong>fictícios</strong>. Não representam o Boletim Focus nem qualquer fonte oficial.
@@ -370,12 +351,12 @@
   <!-- ===================================================== -->
   <!-- MÓDULO D — PRECATÓRIOS MUNICIPAIS/ESTADUAIS           -->
   <!-- ===================================================== -->
-  <section class="tab-panel" data-tab="muni">
+  <section class="tab-panel" data-tab="m2">
     <div class="card">
-      <h2>Módulo D — Precatórios municipais/estaduais</h2>
+      <h2>Cálculo — fila, RCL e prazo (EC 136/25)</h2>
       <p class="desc">
         Estimativa de fila e prazo considerando regime de pagamento vinculado à RCL.
-        Os percentuais da EC 136/25 ficam na aba <strong>“EC 136/25”</strong> e são <strong>editáveis</strong>.
+        Os percentuais da EC 136/25 estão no card <strong>“Parâmetros EC 136/25”</strong> abaixo e são <strong>editáveis</strong>.
       </p>
       <div class="grid">
         <div class="field"><label>RCL do ente (R$)</label><input id="d_rcl" type="number" step="0.01" min="0" placeholder="10000000000"/><span class="err">RCL não pode ser vazia.</span></div>
@@ -401,9 +382,9 @@
   <!-- ===================================================== -->
   <!-- MÓDULO E — PRECATÓRIOS FEDERAIS                       -->
   <!-- ===================================================== -->
-  <section class="tab-panel" data-tab="fed">
+  <section class="tab-panel" data-tab="m3">
     <div class="card">
-      <h2>Módulo E — Precatórios federais</h2>
+      <h2>Cálculo — correção, juros e cenários</h2>
       <p class="desc">Atualização e separação entre principal, correção e juros. Cenário “no orçamento” × “atraso”.</p>
       <div class="grid">
         <div class="field"><label>Índice de correção</label>
@@ -425,16 +406,20 @@
         <div class="field"><label>Deságio/acordo (%)</label><input id="e_desagio" type="number" step="0.01" min="0" max="100" value="0"/><span class="err">Percentual deve estar entre 0 e 100.</span></div>
         <div class="field"><label>Atraso estimado além do orçamento (meses)</label><input id="e_atraso_meses" type="number" min="0" value="0"/></div>
       </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" data-calc="prec_fed">▶ Calcular módulo 3</button>
+        <button class="btn btn-ghost" data-clear="m3">Limpar módulo</button>
+      </div>
     </div>
   </section>
 
   <!-- ===================================================== -->
   <!-- MÓDULO F — ATIVOS JUDICIAIS                           -->
   <!-- ===================================================== -->
-  <section class="tab-panel" data-tab="ativojud">
+  <section class="tab-panel" data-tab="m1">
     <div class="card">
-      <h2>Módulo F — Ativos judiciais</h2>
-      <p class="desc">Cálculo flexível com racional financeiro detalhado. Use quando o crédito ainda não está inscrito em precatório.</p>
+      <h2>Cálculo — correção, juros e valor presente</h2>
+      <p class="desc">Correção sobre o valor base, juros de mora simples (s/ capitalização) sobre o valor corrigido, deduções, êxito e VP.</p>
       <div class="grid">
         <div class="field"><label>Índice de correção</label>
           <select id="f_indice">
@@ -463,13 +448,17 @@
         <div class="field"><label>Prazo esperado de recebimento (anos)</label><input id="f_prazo" type="number" step="0.1" min="0" value="3"/></div>
         <div class="field"><label>Taxa de desconto p/ VP (% a.a.)</label><input id="f_taxa_desc" type="number" step="0.01" min="0" value="12"/><span class="err">Taxa não pode ser negativa.</span></div>
       </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" data-calc="ativo_jud">▶ Calcular módulo 1</button>
+        <button class="btn btn-ghost" data-clear="m1">Limpar módulo</button>
+      </div>
     </div>
   </section>
 
   <!-- ===================================================== -->
   <!-- EC 136/2025 — PARÂMETROS EDITÁVEIS                    -->
   <!-- ===================================================== -->
-  <section class="tab-panel" data-tab="ec136">
+  <section class="tab-panel" data-tab="m2">
     <div class="card">
       <h2>Parâmetros EC 136/25 <span class="tag tag-mock">valores demo — NÃO normativos</span></h2>
       <div class="alerts">
@@ -506,6 +495,10 @@
         <a href="https://sidra.ibge.gov.br/" target="_blank" rel="noopener">IBGE / SIDRA</a>
         <span class="small muted">+ Slot para tribunal competente (preencher conforme o caso).</span>
       </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" data-calc="prec_muni">▶ Calcular módulo 2</button>
+        <button class="btn btn-ghost" data-clear="m2">Limpar módulo</button>
+      </div>
     </div>
   </section>
 
@@ -515,9 +508,9 @@
   <section class="tab-panel" data-tab="result">
 
     <div class="card">
+      <p class="desc">Os resultados aparecem aqui após clicar em <strong>“Calcular”</strong> dentro de cada módulo (1, 2 ou 3).</p>
       <div class="btn-row" style="margin-top:0">
-        <button class="btn btn-primary" id="btn_calc">▶ Calcular</button>
-        <button class="btn btn-ghost" id="btn_clear">Limpar</button>
+        <button class="btn btn-ghost" id="btn_clear">Limpar tudo</button>
         <button class="btn btn-ok" id="btn_csv">Exportar CSV (memória)</button>
         <button class="btn btn-ok" id="btn_json">Exportar JSON</button>
         <button class="btn btn-ghost" id="btn_copy">Copiar memória de cálculo</button>
@@ -743,67 +736,50 @@ const Valida = {
     const el=document.getElementById(id); if(!el) return;
     const field=el.closest('.field'); if(field) field.classList.toggle('invalid',on);
   },
-  // Retorna {errors:[], warnings:[]} conforme o tipo de ativo ativo
-  run(){
-    const errors=[], warnings=[];
-    const tipo=Util.str('a_tipo');
+  // Valida os campos comuns de base (valor + datas) de um módulo, dado o prefixo (aj/mu/fe)
+  base(prefix, errors){
+    ['_valor','_data_base','_data_corte'].forEach(s=>this.marcarErro(prefix+s,false));
+    const valor=Util.num(prefix+'_valor');
+    if(valor===null || valor<=0){ errors.push('Valor base nulo ou inválido.'); this.marcarErro(prefix+'_valor',true); }
+    const dBase=Util.date(prefix+'_data_base');
+    if(!dBase){ errors.push('Data-base inválida ou ausente.'); this.marcarErro(prefix+'_data_base',true); }
+    const dCorte=Util.date(prefix+'_data_corte');
+    if(dBase && dCorte && dCorte < dBase){ errors.push('Data de corte anterior à data-base.'); this.marcarErro(prefix+'_data_corte',true); }
+  },
 
-    // limpa marcações
-    ['a_valor','a_data_base','a_ano_orc','a_data_corte','d_rcl','d_taxa_desc',
-     'e_indice','e_juros_am','e_desagio','f_prob','f_taxa_desc','ec_pct_aplic']
-      .forEach(id=>this.marcarErro(id,false));
+  // Módulo 1 — ativos judiciais
+  ativoJud(){
+    const errors=[], warnings=[]; this.base('aj',errors);
+    ['f_prob','f_taxa_desc'].forEach(id=>this.marcarErro(id,false));
+    const p=Util.num('f_prob'); if(p!==null && (p<0||p>100)){ errors.push('Probabilidade fora de 0–100%.'); this.marcarErro('f_prob',true); }
+    const td=Util.num('f_taxa_desc'); if(td!==null && td<0){ errors.push('Taxa de desconto negativa.'); this.marcarErro('f_taxa_desc',true); }
+    if(Util.str('f_indice')==='manual' && Util.num('f_fator_manual')===null) warnings.push('Índice manual sem fator informado — usando fator 1,0.');
+    if(Util.str('f_juros_tipo')==='taxa_legal' && Util.num('f_taxa_legal')===null) warnings.push('Taxa legal selecionada sem valor — usando 0% a.m.');
+    return {errors,warnings};
+  },
 
-    const valor=Util.num('a_valor');
-    if(valor===null || valor<=0){ errors.push('Valor base nulo ou inválido.'); this.marcarErro('a_valor',true); }
+  // Módulo 2 — precatórios municipais/estaduais
+  municipal(){
+    const errors=[], warnings=[]; this.base('mu',errors);
+    ['d_rcl','d_taxa_desc','ec_pct_aplic','mu_ano_orc'].forEach(id=>this.marcarErro(id,false));
+    if(Util.num('d_rcl')===null || Util.num('d_rcl')<=0){ errors.push('RCL vazia/zerada (obrigatória para precatório municipal/estadual).'); this.marcarErro('d_rcl',true); }
+    const td=Util.num('d_taxa_desc'); if(td!==null && td<0){ errors.push('Taxa de desconto negativa.'); this.marcarErro('d_taxa_desc',true); }
+    const pa=Util.num('ec_pct_aplic'); if(pa===null || pa<0 || pa>100){ errors.push('% RCL aplicável fora de 0–100 (EC 136/25).'); this.marcarErro('ec_pct_aplic',true); }
+    if(Util.num('mu_ano_orc')===null){ warnings.push('Ano de orçamento ausente — estimativas usarão premissa.'); this.marcarErro('mu_ano_orc',true); }
+    return {errors,warnings};
+  },
 
-    const dBase=Util.date('a_data_base');
-    if(!dBase){ errors.push('Data-base inválida ou ausente.'); this.marcarErro('a_data_base',true); }
-
-    const dCorte=Util.date('a_data_corte');
-    if(dBase && dCorte && dCorte < dBase){
-      errors.push('Data de corte anterior à data-base.'); this.marcarErro('a_data_corte',true);
-    }
-
-    const dPgto=Util.date('a_data_pgto');
-    if(dBase && dPgto && dPgto < dBase){
-      warnings.push('Data esperada de pagamento anterior à data-base — verifique.');
-    }
-
-    if(Util.num('a_ano_orc')===null){
-      warnings.push('Ano de orçamento ausente — algumas estimativas usarão premissa.');
-      this.marcarErro('a_ano_orc',true);
-    }
-
-    // Específicas — Módulo D
-    if(tipo==='prec_muni'){
-      if(Util.num('d_rcl')===null || Util.num('d_rcl')<=0){
-        errors.push('RCL vazia/zerada (obrigatória para precatório municipal/estadual).');
-        this.marcarErro('d_rcl',true);
-      }
-      const td=Util.num('d_taxa_desc');
-      if(td!==null && td<0){ errors.push('Taxa de desconto negativa (Módulo D).'); this.marcarErro('d_taxa_desc',true); }
-      const pa=Util.num('ec_pct_aplic');
-      if(pa===null || pa<0 || pa>100){ errors.push('% RCL aplicável fora de 0–100 (EC 136/25).'); this.marcarErro('ec_pct_aplic',true); }
-    }
-
-    // Específicas — Módulo E
-    if(tipo==='prec_fed'){
-      if(!Util.str('e_indice')){ errors.push('Índice de correção ausente (federal).'); this.marcarErro('e_indice',true); }
-      const j=Util.num('e_juros_am'); if(j!==null && j<0){ errors.push('Juros negativos (federal).'); this.marcarErro('e_juros_am',true); }
-      const dg=Util.num('e_desagio'); if(dg!==null && (dg<0||dg>100)){ errors.push('Deságio fora de 0–100% (federal).'); this.marcarErro('e_desagio',true); }
-      if(Util.str('e_indice')==='manual' && (Util.num('e_fator_manual')===null)){
-        warnings.push('Índice manual selecionado sem fator informado — usando fator 1,0.');
-      }
-    }
-
-    // Específicas — Módulo F
-    if(tipo==='ativo_jud'){
-      const p=Util.num('f_prob'); if(p!==null && (p<0||p>100)){ errors.push('Probabilidade fora de 0–100% (ativo judicial).'); this.marcarErro('f_prob',true); }
-      const td=Util.num('f_taxa_desc'); if(td!==null && td<0){ errors.push('Taxa de desconto negativa (ativo judicial).'); this.marcarErro('f_taxa_desc',true); }
-      if(Util.str('f_indice')==='manual' && Util.num('f_fator_manual')===null){
-        warnings.push('Índice manual sem fator informado — usando fator 1,0.');
-      }
-    }
+  // Módulo 3 — precatórios federais
+  federal(){
+    const errors=[], warnings=[]; this.base('fe',errors);
+    ['e_indice','e_juros_am','e_desagio','fe_ano_orc'].forEach(id=>this.marcarErro(id,false));
+    if(!Util.str('e_indice')){ errors.push('Índice de correção ausente.'); this.marcarErro('e_indice',true); }
+    const j=Util.num('e_juros_am'); if(j!==null && j<0){ errors.push('Juros negativos.'); this.marcarErro('e_juros_am',true); }
+    const dg=Util.num('e_desagio'); if(dg!==null && (dg<0||dg>100)){ errors.push('Deságio fora de 0–100%.'); this.marcarErro('e_desagio',true); }
+    if(Util.str('e_indice')==='manual' && Util.num('e_fator_manual')===null) warnings.push('Índice manual sem fator informado — usando fator 1,0.');
+    const dBase=Util.date('fe_data_base'), dPgto=Util.date('fe_data_pgto');
+    if(dBase && dPgto && dPgto < dBase) warnings.push('Data esperada de pagamento anterior à data-base — verifique.');
+    if(Util.num('fe_ano_orc')===null){ warnings.push('Ano de orçamento ausente — estimativas usarão premissa.'); this.marcarErro('fe_ano_orc',true); }
     return {errors,warnings};
   }
 };
@@ -1309,10 +1285,26 @@ function initTabs(){
   });
 }
 
-// Função principal de cálculo: valida, roteia por tipo de ativo, renderiza
-function calcular(){
-  const {errors,warnings}=Valida.run();
-  // mostra erros e interrompe SOMENTE se houver erros bloqueantes
+// Monta o objeto-base (valor + datas) de um módulo, a partir do prefixo (aj/mu/fe)
+function baseDe(prefix){
+  return {
+    valor:  Util.num(prefix+'_valor'),
+    dBase:  Util.date(prefix+'_data_base'),
+    dCorte: Util.date(prefix+'_data_corte') || new Date(),
+    dPgto:  Util.date(prefix+'_data_pgto')
+  };
+}
+
+// Cálculo de UM módulo: valida, roteia, renderiza. tipo ∈ {ativo_jud, prec_muni, prec_fed}
+function calcularModulo(tipo){
+  const cfg={
+    ativo_jud:{ valida:()=>Valida.ativoJud(), prefix:'aj', motor:b=>Motor.calcAtivoJud(b) },
+    prec_muni:{ valida:()=>Valida.municipal(), prefix:'mu', motor:b=>Motor.calcMunicipal(b) },
+    prec_fed: { valida:()=>Valida.federal(),   prefix:'fe', motor:b=>Motor.calcFederal(b) }
+  }[tipo];
+  if(!cfg) return;
+
+  const {errors,warnings}=cfg.valida();
   if(errors.length){
     document.querySelector('.tab-btn[data-tab="result"]').click();
     UI.show('result_alerts');
@@ -1322,34 +1314,28 @@ function calcular(){
     return; // não trava silenciosamente — mostra o motivo
   }
 
-  // base comum
-  const base={
-    valor:Util.num('a_valor'),
-    dBase:Util.date('a_data_base'),
-    dCorte:Util.date('a_data_corte')||new Date(),
-    dPgto:Util.date('a_data_pgto')
-  };
-
-  const tipo=Util.str('a_tipo');
-  let r;
-  if(tipo==='prec_fed') r=Motor.calcFederal(base);
-  else if(tipo==='ativo_jud') r=Motor.calcAtivoJud(base);
-  else r=Motor.calcMunicipal(base);
-
-  // anexa warnings não bloqueantes como alertas
+  const r=cfg.motor(baseDe(cfg.prefix));
   warnings.forEach(w=> r.alertas.unshift({tipo:'warn',txt:'⚠️ '+w}));
-
   document.querySelector('.tab-btn[data-tab="result"]').click();
   UI.renderResultado(r);
 }
 
+// Limpa os inputs de UM módulo (aba m1/m2/m3) sem afetar os demais
+function limparModulo(tab){
+  document.querySelectorAll(`.tab-panel[data-tab="${tab}"]`).forEach(panel=>{
+    panel.querySelectorAll('input,select,textarea').forEach(el=>{
+      if(el.tagName==='SELECT') el.selectedIndex=0; else el.value='';
+    });
+    panel.querySelectorAll('.field').forEach(f=>f.classList.remove('invalid'));
+  });
+}
+
+// Limpa tudo e oculta os resultados
 function limpar(){
-  document.querySelectorAll('input').forEach(el=>{ if(el.type==='number'||el.type==='text'||el.type==='date') el.value=''; });
-  document.querySelectorAll('.field').forEach(f=>f.classList.remove('invalid'));
+  ['m1','m2','m3'].forEach(limparModulo);
   ['result_alerts','result_summary','result_assump','result_scen','result_update','result_flow','result_charts','result_memo']
     .forEach(id=>document.getElementById(id).style.display='none');
   State.ultimoResultado=null;
-  UI.renderIndices(); UI.renderProjecao();
 }
 
 /* ============ INICIALIZAÇÃO ============ */
@@ -1383,7 +1369,12 @@ window.addEventListener('DOMContentLoaded',()=>{
   UI.renderIndices();
   UI.renderProjecao();
 
-  document.getElementById('btn_calc').addEventListener('click',calcular);
+  // Botões "Calcular" por módulo (delegação via data-calc) e "Limpar módulo" (data-clear)
+  document.querySelectorAll('[data-calc]').forEach(btn=>
+    btn.addEventListener('click',()=>calcularModulo(btn.dataset.calc)));
+  document.querySelectorAll('[data-clear]').forEach(btn=>
+    btn.addEventListener('click',()=>limparModulo(btn.dataset.clear)));
+
   document.getElementById('btn_clear').addEventListener('click',limpar);
   document.getElementById('btn_csv').addEventListener('click',()=>Export.csv());
   document.getElementById('btn_json').addEventListener('click',()=>Export.json());
@@ -1409,6 +1400,9 @@ window.addEventListener('DOMContentLoaded',()=>{
     State.projecao.forEach(r=>{ r.selic=s;r.ipca=i;r.inpc=n;r.ipcae=e;r.tipo='manual';r.fonte='taxa fixa (usuário)'; });
     UI.renderProjecao();
   });
+
+  // normaliza os painéis ativos (cada aba agrupa mais de um painel)
+  document.querySelector('.tab-btn[data-tab="m1"]').click();
 });
 </script>
 </body>
