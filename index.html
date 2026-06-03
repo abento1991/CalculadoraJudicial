@@ -433,19 +433,19 @@
           </select>
         </div>
         <div class="field"><label>Fator de correção manual</label><input id="f_fator_manual" type="number" step="0.0001" min="0" placeholder="ex.: 1.30"/></div>
-        <div class="field"><label>Juros de mora</label>
+        <div class="field"><label>Juros de mora <span class="small muted">(sempre simples, s/ capitalização)</span></label>
           <select id="f_juros_tipo">
-            <option value="1">1% a.m. simples</option>
-            <option value="0.5">0,5% a.m. simples</option>
-            <option value="selic">Selic</option>
+            <option value="0.5">0,5% a.m.</option>
+            <option value="1">1% a.m.</option>
+            <option value="taxa_legal">Taxa legal (parametrizável)</option>
+            <option value="selic_ipca">Selic − IPCA (juros reais)</option>
             <option value="manual">Outro/manual</option>
           </select>
+          <span class="hint">Incidem sobre o valor base já corrigido.</span>
         </div>
+        <div class="field"><label>Taxa legal (% a.m.)</label><input id="f_taxa_legal" type="number" step="0.01" min="0" placeholder="ex.: 1"/><span class="hint">parametrizável — varia por período/regime</span></div>
         <div class="field"><label>Juros manual (% a.m.)</label><input id="f_juros_manual" type="number" step="0.01" min="0" placeholder="ex.: 1"/></div>
         <div class="field"><label>Data inicial dos juros</label><input id="f_juros_ini" type="date"/></div>
-        <div class="field"><label>Capitalização</label>
-          <select id="f_capit"><option value="simples">Simples</option><option value="composta">Composta (se juridicamente aplicável)</option></select>
-        </div>
         <div class="field"><label>Honorários (R$)</label><input id="f_honor" type="number" step="0.01" min="0" value="0"/></div>
         <div class="field"><label>Custas (R$)</label><input id="f_custas" type="number" step="0.01" min="0" value="0"/></div>
         <div class="field"><label>Impostos (R$)</label><input id="f_impostos" type="number" step="0.01" min="0" value="0"/></div>
@@ -826,33 +826,37 @@ const Motor = {
     const {valor,dBase,dCorte}=base;
     const indice=Util.str('f_indice');
     const fatorManual=Util.num('f_fator_manual');
-    const capit=Util.str('f_capit');
     const jurosIni=Util.date('f_juros_ini')||dBase;
 
-    // juros
-    let jurosAm; const jt=Util.str('f_juros_tipo');
-    if(jt==='selic'){ jurosAm=null; }
-    else if(jt==='manual'){ jurosAm=Util.num('f_juros_manual')??0; }
-    else { jurosAm=Number(jt); }
-
+    // 1) Correção monetária sobre o valor base
     const cor=this.fatorCorrecao(indice,dBase,dCorte,fatorManual,premissas,alertas);
     const valorCorrigido=Calc.corrigir(valor,cor.fator);
     const correcaoValor=valorCorrigido-valor;
 
+    // 2) Juros de mora: SEMPRE SIMPLES, incidindo sobre o valor base CORRIGIDO.
+    //    Determina a taxa mensal (% a.m.) conforme a opção escolhida.
+    const jt=Util.str('f_juros_tipo');
     const mesesJuros=Math.max(0,Util.monthsBetween(jurosIni,dCorte));
-    let juros=0;
-    if(jt==='selic'){
-      juros=0;
-      premissas.push('Juros = Selic: não somar índice de correção + Selic (evita dupla contagem). Juros zerados aqui.');
-      alertas.push({tipo:'info',txt:'Juros via Selic: confira se o índice de correção já não é Selic para não duplicar.'});
-    } else if(capit==='composta'){
-      juros=Calc.jurosCompostos(valorCorrigido,jurosAm,mesesJuros);
-      premissas.push(`Juros COMPOSTOS ${Util.pct(jurosAm)} a.m. por ${mesesJuros.toFixed(1)} meses.`);
-      alertas.push({tipo:'warn',txt:'Capitalização composta selecionada — confirmar cabimento jurídico no caso concreto.'});
+    let jurosAm=0, jurosDesc='';
+    if(jt==='manual'){
+      jurosAm=Util.num('f_juros_manual')??0; jurosDesc=`manual ${Util.pct(jurosAm)} a.m.`;
+    } else if(jt==='taxa_legal'){
+      jurosAm=Util.num('f_taxa_legal')??0; jurosDesc=`taxa legal ${Util.pct(jurosAm)} a.m.`;
+      alertas.push({tipo:'warn',txt:'Taxa legal é <strong>parametrizável</strong> e varia conforme período/regime — confirmar no caso concreto.'});
+    } else if(jt==='selic_ipca'){
+      // Juros reais = Selic − IPCA (spread anual da projeção mock), convertido p/ mês.
+      const proj=State.projecao[0]||{};
+      const spreadAa=(proj.selic??0)-(proj.ipca??0);
+      jurosAm=spreadAa/12; // aproximação linear a.a. → a.m.
+      jurosDesc=`Selic−IPCA ≈ ${Util.pct(spreadAa)} a.a. (${Util.pct(jurosAm)} a.m.)`;
+      alertas.push({tipo:'warn',txt:'Juros "Selic − IPCA" usam o spread da projeção <strong>mock/demo</strong>, não oficial.'});
+      if(spreadAa<0) alertas.push({tipo:'info',txt:'Spread Selic−IPCA negativo no cenário atual → juros reais zerados.'});
     } else {
-      juros=Calc.jurosSimples(valorCorrigido,jurosAm,mesesJuros);
-      premissas.push(`Juros SIMPLES ${Util.pct(jurosAm)} a.m. por ${mesesJuros.toFixed(1)} meses.`);
+      jurosAm=Number(jt); jurosDesc=`${Util.pct(jurosAm)} a.m.`;
     }
+    jurosAm=Math.max(0,jurosAm); // não admite juros negativos
+    const juros=Calc.jurosSimples(valorCorrigido,jurosAm,mesesJuros);
+    premissas.push(`Juros de mora SIMPLES (s/ capitalização) — ${jurosDesc} por ${mesesJuros.toFixed(1)} meses, sobre o valor corrigido.`);
 
     const valorBruto=valorCorrigido+juros;
     const deducoes=(Util.num('f_honor')||0)+(Util.num('f_custas')||0)+(Util.num('f_impostos')||0);
@@ -871,7 +875,7 @@ const Motor = {
     const racional=`O valor original de ${Util.brl(valor)}, com data-base em ${Util.fmtDate(dBase)}, `
       +`foi atualizado pelo índice ${indice.toUpperCase()} até ${Util.fmtDate(dCorte)}, resultando em fator acumulado de `
       +`${Util.fator(cor.fator)}. Sobre o valor corrigido (${Util.brl(valorCorrigido)}) foram aplicados juros de mora `
-      +`${jt==='selic'?'via Selic (não somados aqui)':Util.pct(jurosAm)+' a.m. em regime '+capit} desde ${Util.fmtDate(jurosIni)}, `
+      +`de ${jurosDesc} em regime SIMPLES (sem capitalização) desde ${Util.fmtDate(jurosIni)}, `
       +`resultando em ${Util.brl(juros)} de juros. O valor bruto estimado é ${Util.brl(valorBruto)}.`;
 
     memo.push('=== ATIVO JUDICIAL ===');
