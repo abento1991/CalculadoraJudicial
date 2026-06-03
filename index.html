@@ -279,35 +279,45 @@
   <!-- ===================================================== -->
   <section class="tab-panel" data-tab="indices">
     <div class="card">
-      <h2>Módulo B — Índices históricos <span class="tag tag-mock">dados mock/demo</span></h2>
+      <h2>Módulo B — Índices históricos mensais <span class="tag tag-pub">fonte: BCB/SGS</span></h2>
       <p class="desc">
-        Séries de Selic, IPCA, IPCA-E e INPC. Na versão MVP os valores são <strong>fictícios (mock)</strong>,
-        servindo apenas para demonstrar o mecanismo de cálculo. Estruturado para futura conexão com
-        BCB/SGS e IBGE/SIDRA. Você pode editar qualquer célula manualmente.
+        Séries mensais <strong>reais desde 1994</strong> (IPCA, INPC, IPCA-E e Selic), baixadas da API pública do
+        <strong>Banco Central — SGS</strong> diretamente no seu navegador e guardadas em <strong>cache local</strong>.
+        Você pode editar qualquer célula manualmente. Enquanto não carregar, o app usa série <span class="tag tag-mock">mock/demo</span> apenas para demonstração.
       </p>
+      <div class="grid" style="max-width:520px">
+        <div class="field"><label>Data inicial</label><input id="b_dt_ini" type="date" value="1994-01-01"/></div>
+        <div class="field"><label>Data final</label><input id="b_dt_fim" type="date"/></div>
+      </div>
       <div class="alerts">
         <div class="alert warn" id="b_status">
-          ⓘ Dados não carregados de fonte oficial — usando série <strong>mock/demo</strong>. Preencha manualmente ou conecte API.
+          ⓘ Usando série <strong>mock/demo</strong> — clique em “Carregar dados oficiais (BCB)” para baixar as séries reais desde 1994.
         </div>
       </div>
       <div class="btn-row">
-        <button class="btn btn-ghost" id="b_reload_mock">Recarregar série mock</button>
-        <button class="btn btn-ghost" id="b_try_api" title="Tentativa de API (placeholder)">Tentar carregar API (placeholder)</button>
+        <button class="btn btn-primary" id="b_load_bcb">⬇ Carregar/atualizar dados oficiais (BCB)</button>
+        <button class="btn btn-ghost" id="b_reload_mock">Usar série mock/demo</button>
+        <button class="btn btn-ghost" id="b_clear_cache">Limpar cache</button>
       </div>
-      <div class="table-scroll">
+      <p class="small muted" id="b_meta"></p>
+      <div class="table-scroll" style="max-height:440px">
         <table id="b_table">
           <thead>
             <tr>
-              <th class="lbl">Ano/Mês (referência)</th>
-              <th>Selic mês (%)</th>
+              <th class="lbl">Ano/Mês</th>
               <th>IPCA mês (%)</th>
-              <th>IPCA-E mês (%)</th>
               <th>INPC mês (%)</th>
+              <th>IPCA-E mês (%)</th>
+              <th>Selic mês (%)</th>
             </tr>
           </thead>
           <tbody><!-- preenchido via JS --></tbody>
         </table>
       </div>
+      <p class="small muted">
+        Códigos SGS: IPCA 433 · INPC 188 · IPCA-E (IPCA-15) 7478 · Selic acumulada no mês 4390.
+        Obs.: IPCA-E (IPCA-15) só existe na fonte oficial a partir de 2000.
+      </p>
     </div>
   </section>
 
@@ -611,12 +621,58 @@ const Util = {
   fmtDate(d){ return d? d.toLocaleDateString('pt-BR'):'—'; }
 };
 
-/* ============ 2. CAMADA DE DADOS (MOCK + ganchos API) ============
-   IMPORTANTE: Os números abaixo são FICTÍCIOS (mock/demo). Não são
-   séries reais do BCB/IBGE. A função loadFromAPI() é um PLACEHOLDER:
-   numa versão de produção, ela faria fetch nas APIs públicas.
+/* ============ 2. CAMADA DE DADOS ============
+   - Séries REAIS: API pública do Banco Central (SGS), baixadas no
+     navegador e cacheadas em localStorage. NÃO são inventadas.
+   - mockMensal()/mockProjecao() são FICTÍCIAS (mock/demo), usadas só
+     como fallback enquanto os dados reais não foram carregados.
 */
 const Dados = {
+  // Códigos das séries no SGS do Banco Central (fonte oficial)
+  SGS:{ ipca:433, inpc:188, ipcae:7478, selic:4390 },
+  CACHE_KEY:'cj_serie_bcb_v1',
+
+  // Baixa UMA série do SGS. Retorna [{data:'dd/mm/yyyy', valor:'x.xx'}]
+  async fetchSerieSGS(codigo, dtIni, dtFim){
+    const url=`https://api.bcb.gov.br/dados/serie/bcdata.sgs.${codigo}/dados?formato=json`
+      + (dtIni?`&dataInicial=${dtIni}`:'') + (dtFim?`&dataFinal=${dtFim}`:'');
+    const resp=await fetch(url,{headers:{'Accept':'application/json'}});
+    if(!resp.ok) throw new Error('HTTP '+resp.status+' (SGS '+codigo+')');
+    return resp.json();
+  },
+
+  // Baixa as 4 séries e mescla por competência 'yyyy-mm'.
+  // Retorna {ok:true, serie, meta} ou {ok:false, reason}.
+  async carregarHistorico(dtIni, dtFim){
+    try{
+      const [ipca,inpc,ipcae,selic]=await Promise.all([
+        this.fetchSerieSGS(this.SGS.ipca,  dtIni, dtFim),
+        this.fetchSerieSGS(this.SGS.inpc,  dtIni, dtFim),
+        this.fetchSerieSGS(this.SGS.ipcae, dtIni, dtFim),
+        this.fetchSerieSGS(this.SGS.selic, dtIni, dtFim)
+      ]);
+      const serie={};
+      const merge=(arr,k)=>arr.forEach(o=>{
+        const p=o.data.split('/'); const ref=p[2]+'-'+p[1]; // yyyy-mm
+        (serie[ref]=serie[ref]||{})[k]=Number(o.valor);
+      });
+      merge(ipca,'ipca'); merge(inpc,'inpc'); merge(ipcae,'ipcae'); merge(selic,'selic');
+      const refs=Object.keys(serie).sort();
+      if(!refs.length) return {ok:false, reason:'Resposta vazia do SGS.'};
+      const meta={ fonte:'Banco Central — SGS', codigos:this.SGS,
+        atualizado_em:new Date().toISOString(),
+        inicio:refs[0], fim:refs[refs.length-1], meses:refs.length };
+      return {ok:true, serie, meta};
+    }catch(e){
+      return {ok:false, reason:e.message+' — possível bloqueio de CORS/rede. Rode via servidor http (ex.: python3 -m http.server) ou preencha manualmente.'};
+    }
+  },
+
+  // Persistência em cache local (offline-first)
+  salvarCache(serie,meta){ try{ localStorage.setItem(this.CACHE_KEY, JSON.stringify({serie,meta})); }catch(e){} },
+  carregarCache(){ try{ const s=localStorage.getItem(this.CACHE_KEY); return s?JSON.parse(s):null; }catch(e){ return null; } },
+  limparCache(){ try{ localStorage.removeItem(this.CACHE_KEY); }catch(e){} },
+
   // série mensal mock para os últimos meses (apenas demonstração de mecânica)
   mockMensal(){
     // gera 24 referências mensais com taxas fictícias estáveis
@@ -637,19 +693,28 @@ const Dados = {
     }
     return rows;
   },
-  // PLACEHOLDER de integração real. Não inventa dados: apenas avisa.
-  async loadFromAPI(){
-    /* Produção:
-       - Selic/IPCA/INPC: BCB/SGS  https://api.bcb.gov.br/dados/serie/...
-       - IPCA/IPCA-E/INPC: IBGE/SIDRA https://servicodados.ibge.gov.br/api/...
-       Em HTML puro pode haver CORS — recomenda-se proxy/backend.
-    */
-    return { ok:false, reason:'Integração de API não disponível no MVP offline.' };
-  }
 };
 
 /* ============ 3. MOTOR DE CÁLCULO (funções modulares) ============ */
 const Calc = {
+  // Fator acumulado REAL de um índice entre data-base e data-corte,
+  // usando a série mensal {yyyy-mm:{ipca,inpc,ipcae,selic}}.
+  // Convenção (documentada): acumula a variação dos meses de competência
+  // do mês SEGUINTE à data-base até o mês da data-corte (inclusive).
+  fatorAcumuladoPeriodo(serie, indiceKey, dBase, dCorte){
+    if(!serie || !dBase || !dCorte) return null;
+    let f=1, usados=0, faltando=0;
+    const cur=new Date(dBase.getFullYear(), dBase.getMonth()+1, 1);
+    const fim=new Date(dCorte.getFullYear(), dCorte.getMonth(), 1);
+    while(cur<=fim){
+      const ref=cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0');
+      const rec=serie[ref]; const v=rec? rec[indiceKey] : undefined;
+      if(v===undefined||v===null||isNaN(v)) faltando++;
+      else { f*=(1+v/100); usados++; }
+      cur.setMonth(cur.getMonth()+1);
+    }
+    return {fator:f, usados, faltando};
+  },
   // Fator acumulado a partir de taxas MENSAIS (%) — composto
   fatorAcumuladoMensal(taxasPct){
     return taxasPct.reduce((f,t)=> f*(1+(t/100)), 1);
@@ -757,13 +822,21 @@ const Motor = {
       premissas.push(`Correção: fator manual = ${Util.fator(f)} (informado pelo usuário).`);
       return {fator:f, meses, base:'manual'};
     }
-    // taxa anual proxy da projeção mock para o índice escolhido
+    // 1) Tenta usar a série REAL (BCB/SGS) carregada na aba "Índices"
+    if(State.serieReal){
+      const r=Calc.fatorAcumuladoPeriodo(State.serieReal, indice, dataBase, dataCorte);
+      if(r && r.usados>0){
+        premissas.push(`Correção por ${indice.toUpperCase()} — fator acumulado REAL (BCB/SGS), ${r.usados} meses de competência → ${Util.fator(r.fator)}.`);
+        if(r.faltando>0) alertas.push({tipo:'warn',txt:`Série ${indice.toUpperCase()}: ${r.faltando} mês(es) sem dado no período (ex.: IPCA-E só existe desde 2000). Fator usa apenas os meses disponíveis.`});
+        return {fator:r.fator, meses, base:indice+' (BCB/SGS)', taxaAnual:null};
+      }
+    }
+    // 2) Fallback: projeção anual mock (sinalizado)
     const proj=State.projecao[0]||{};
-    const map={ipca:'ipca',ipcae:'ipcae',inpc:'inpc',selic:'selic'};
-    const taxaAnual=proj[map[indice]] ?? 4;
+    const taxaAnual=proj[indice] ?? 4;
     const f=Calc.fatorAnualParaMeses(taxaAnual,meses);
     premissas.push(`Correção por ${indice.toUpperCase()} (proxy mock ${Util.pct(taxaAnual)} a.a.) por ${meses.toFixed(1)} meses → fator ${Util.fator(f)}.`);
-    alertas.push({tipo:'warn',txt:`Índice ${indice.toUpperCase()} usa série/projeção <strong>mock/demo</strong>, não oficial.`});
+    alertas.push({tipo:'warn',txt:`Índice ${indice.toUpperCase()} usando série/projeção <strong>mock/demo</strong> — carregue os dados oficiais na aba “Índices”.`});
     return {fator:f, meses, base:indice, taxaAnual};
   },
 
@@ -1012,23 +1085,59 @@ const Motor = {
 };
 
 /* ============ ESTADO GLOBAL ============ */
-const State = { mensal:[], projecao:[], ultimoResultado:null };
+const State = { mensal:[], projecao:[], serieReal:null, serieMeta:null, ultimoResultado:null };
 
 /* ============ 6. RENDERIZAÇÃO ============ */
 const UI = {
   renderIndices(){
-    State.mensal=Dados.mockMensal();
     const tb=document.querySelector('#b_table tbody'); tb.innerHTML='';
-    State.mensal.forEach((r,i)=>{
-      const tr=document.createElement('tr');
-      tr.innerHTML=`<td class="lbl">${r.ref}</td>`+
-        ['selic','ipca','ipcae','inpc'].map(k=>
+    const cols=['ipca','inpc','ipcae','selic']; // ordem das colunas
+    if(State.serieReal){
+      // Série REAL — mais recente primeiro
+      const refs=Object.keys(State.serieReal).sort().reverse();
+      refs.forEach(ref=>{
+        const rec=State.serieReal[ref]||{};
+        const tr=document.createElement('tr');
+        tr.innerHTML=`<td class="lbl">${ref}</td>`+cols.map(k=>{
+          const val=(rec[k]??'');
+          return `<td><input data-ref="${ref}" data-k="${k}" value="${val}" style="width:80px;background:transparent;border:none;color:var(--txt);text-align:right" type="number" step="0.01"></td>`;
+        }).join('');
+        tb.appendChild(tr);
+      });
+      tb.querySelectorAll('input').forEach(inp=>inp.addEventListener('change',e=>{
+        const ref=e.target.dataset.ref, k=e.target.dataset.k;
+        (State.serieReal[ref]=State.serieReal[ref]||{})[k]= e.target.value===''?undefined:Number(e.target.value);
+        Dados.salvarCache(State.serieReal, State.serieMeta);
+      }));
+    } else {
+      // Fallback mock/demo
+      State.mensal=Dados.mockMensal();
+      State.mensal.forEach((r,i)=>{
+        const tr=document.createElement('tr');
+        tr.innerHTML=`<td class="lbl">${r.ref}</td>`+cols.map(k=>
           `<td><input data-i="${i}" data-k="${k}" value="${r[k]}" style="width:80px;background:transparent;border:none;color:var(--txt);text-align:right" type="number" step="0.01"></td>`).join('');
-      tb.appendChild(tr);
-    });
-    tb.querySelectorAll('input').forEach(inp=>inp.addEventListener('change',e=>{
-      State.mensal[+e.target.dataset.i][e.target.dataset.k]=Number(e.target.value);
-    }));
+        tb.appendChild(tr);
+      });
+      tb.querySelectorAll('input').forEach(inp=>inp.addEventListener('change',e=>{
+        State.mensal[+e.target.dataset.i][e.target.dataset.k]=Number(e.target.value);
+      }));
+    }
+    this.updateIndicesStatus();
+  },
+  // Atualiza o status/metadados da aba de índices
+  updateIndicesStatus(){
+    const st=document.getElementById('b_status'), meta=document.getElementById('b_meta');
+    if(!st) return;
+    if(State.serieReal && State.serieMeta){
+      const m=State.serieMeta;
+      st.className='alert info';
+      st.innerHTML='✓ Série <strong>real</strong> carregada do Banco Central (SGS).';
+      meta.textContent=`Fonte: ${m.fonte} · período ${m.inicio} a ${m.fim} · ${m.meses} meses · atualizado em ${new Date(m.atualizado_em).toLocaleString('pt-BR')}.`;
+    } else {
+      st.className='alert warn';
+      st.innerHTML='ⓘ Usando série <strong>mock/demo</strong> — clique em “Carregar dados oficiais (BCB)” para baixar as séries reais desde 1994.';
+      if(meta) meta.textContent='';
+    }
   },
   renderProjecao(){
     State.projecao=Dados.mockProjecao();
@@ -1164,8 +1273,11 @@ const Export = {
   json(){
     const r=State.ultimoResultado;
     const payload={
-      _aviso:'Dados de índices/projeções são MOCK/DEMO, não oficiais.',
+      _aviso: State.serieReal
+        ? 'Correção monetária usa série REAL do BCB/SGS (ver serie_meta). Projeções macro permanecem mock/demo.'
+        : 'Dados de índices/projeções são MOCK/DEMO, não oficiais (série real do BCB não carregada).',
       gerado_em:new Date().toISOString(),
+      serie_meta: State.serieMeta || null,
       inputs:this.coletarInputs(),
       projecao_mock:State.projecao,
       premissas:r?r.premissas:[],
@@ -1241,8 +1353,33 @@ function limpar(){
 }
 
 /* ============ INICIALIZAÇÃO ============ */
+// Converte 'yyyy-mm-dd' (input date) em 'dd/mm/yyyy' (formato exigido pelo SGS)
+function isoParaBR(iso){ if(!iso) return ''; const p=iso.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; }
+
+// Baixa as séries reais do BCB e atualiza a tabela
+async function carregarBCB(){
+  const st=document.getElementById('b_status');
+  st.className='alert info'; st.innerHTML='⏳ Baixando séries do Banco Central (SGS)… isso pode levar alguns segundos.';
+  const dtIni=isoParaBR(document.getElementById('b_dt_ini').value);
+  const dtFim=isoParaBR(document.getElementById('b_dt_fim').value);
+  const res=await Dados.carregarHistorico(dtIni,dtFim);
+  if(res.ok){
+    State.serieReal=res.serie; State.serieMeta=res.meta;
+    Dados.salvarCache(res.serie,res.meta);
+    UI.renderIndices();
+  } else {
+    st.className='alert err';
+    st.innerHTML='⚠️ Falha ao carregar dados oficiais: '+res.reason;
+  }
+}
+
 window.addEventListener('DOMContentLoaded',()=>{
   initTabs();
+  // data final padrão = hoje
+  const hoje=new Date(); document.getElementById('b_dt_fim').value=hoje.toISOString().slice(0,10);
+  // tenta restaurar série real do cache local
+  const cache=Dados.carregarCache();
+  if(cache && cache.serie){ State.serieReal=cache.serie; State.serieMeta=cache.meta; }
   UI.renderIndices();
   UI.renderProjecao();
 
@@ -1252,13 +1389,12 @@ window.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('btn_json').addEventListener('click',()=>Export.json());
   document.getElementById('btn_copy').addEventListener('click',()=>Export.copiarMemo());
 
-  document.getElementById('b_reload_mock').addEventListener('click',()=>{ UI.renderIndices();
-    document.getElementById('b_status').innerHTML='ⓘ Série <strong>mock/demo</strong> recarregada. Não é fonte oficial.'; });
-  document.getElementById('b_try_api').addEventListener('click',async()=>{
-    const res=await Dados.loadFromAPI();
-    document.getElementById('b_status').innerHTML = res.ok
-      ? '✓ Dados carregados de API.'
-      : '⚠️ '+res.reason+' — mantendo série mock/demo. (Em produção: conectar BCB/SGS e IBGE/SIDRA via backend.)';
+  document.getElementById('b_load_bcb').addEventListener('click',carregarBCB);
+  document.getElementById('b_reload_mock').addEventListener('click',()=>{
+    State.serieReal=null; State.serieMeta=null; UI.renderIndices();
+  });
+  document.getElementById('b_clear_cache').addEventListener('click',()=>{
+    Dados.limparCache(); State.serieReal=null; State.serieMeta=null; UI.renderIndices();
   });
 
   // modo de projeção: mostra/oculta caixa de taxa fixa
