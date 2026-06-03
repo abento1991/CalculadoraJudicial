@@ -1,0 +1,1275 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Calculadora de Precatórios e Ativos Judiciais — MVP</title>
+<!--
+  =====================================================================
+  CALCULADORA DE PRECATÓRIOS E ATIVOS JUDICIAIS  (MVP / versão 1)
+  ---------------------------------------------------------------------
+  - HTML + CSS + JavaScript puro, sem bibliotecas externas.
+  - Funciona offline com DADOS MOCKADOS (claramente marcados como
+    "mock/demo"). Estruturado para futura troca por APIs públicas
+    reais (BCB/SGS, IBGE/SIDRA, CNJ, Tesouro).
+  - IMPORTANTE: nenhum dado fictício é apresentado como real. Sempre
+    que uma série/projeção/parametro não vier de fonte oficial, o app
+    exibe alerta e permite override manual.
+  - Esta é uma FERRAMENTA FINANCEIRA. Não substitui análise jurídica.
+  =====================================================================
+-->
+<style>
+  /* ================================================================
+     CSS — design system simples, limpo e profissional
+     ================================================================ */
+  :root{
+    --bg:#0f172a;            /* fundo geral (slate-900) */
+    --panel:#1e293b;         /* cards */
+    --panel-2:#273449;       /* cards alternativos */
+    --line:#334155;          /* bordas */
+    --txt:#e2e8f0;           /* texto principal */
+    --txt-dim:#94a3b8;       /* texto secundário */
+    --accent:#38bdf8;        /* azul destaque */
+    --accent-2:#22c55e;      /* verde (ações positivas) */
+    --warn:#f59e0b;          /* alertas */
+    --danger:#ef4444;        /* erros */
+    --mock:#a855f7;          /* indicador de dado mockado */
+    --radius:10px;
+    --shadow:0 4px 16px rgba(0,0,0,.25);
+    font-size:15px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--bg);color:var(--txt);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    line-height:1.45;
+  }
+  header.app-head{
+    background:linear-gradient(135deg,#0b1220,#1e293b);
+    border-bottom:1px solid var(--line);
+    padding:18px 22px;
+  }
+  header.app-head h1{margin:0;font-size:1.25rem;letter-spacing:.3px}
+  header.app-head p{margin:4px 0 0;color:var(--txt-dim);font-size:.85rem}
+  .wrap{max-width:1180px;margin:0 auto;padding:18px 16px 80px}
+
+  /* ---- Banner global de aviso jurídico ---- */
+  .legal-banner{
+    background:#3b2f12;border:1px solid var(--warn);color:#fde68a;
+    padding:10px 14px;border-radius:var(--radius);font-size:.82rem;margin:14px 0;
+  }
+
+  /* ---- Abas ---- */
+  .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:16px 0 10px}
+  .tab-btn{
+    background:var(--panel);border:1px solid var(--line);color:var(--txt-dim);
+    padding:9px 14px;border-radius:8px;cursor:pointer;font-size:.85rem;
+    transition:.15s;
+  }
+  .tab-btn:hover{color:var(--txt)}
+  .tab-btn.active{background:var(--accent);color:#04243a;border-color:var(--accent);font-weight:600}
+  .tab-panel{display:none;animation:fade .2s ease}
+  .tab-panel.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  /* ---- Cards ---- */
+  .card{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px 18px;margin:14px 0;box-shadow:var(--shadow);
+  }
+  .card h2{margin:0 0 4px;font-size:1.02rem}
+  .card h3{margin:14px 0 6px;font-size:.92rem;color:var(--accent)}
+  .card .desc{color:var(--txt-dim);font-size:.8rem;margin:0 0 10px}
+
+  /* ---- Grid de inputs ---- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:.78rem;color:var(--txt-dim);font-weight:500}
+  .field input,.field select,.field textarea{
+    background:var(--bg);border:1px solid var(--line);color:var(--txt);
+    border-radius:7px;padding:8px 10px;font-size:.85rem;font-family:inherit;
+  }
+  .field input:focus,.field select:focus,.field textarea:focus{
+    outline:none;border-color:var(--accent);
+  }
+  .field .hint{font-size:.7rem;color:var(--txt-dim)}
+  .field.invalid input,.field.invalid select{border-color:var(--danger)}
+  .field .err{color:var(--danger);font-size:.7rem;display:none}
+  .field.invalid .err{display:block}
+
+  /* ---- Botões ---- */
+  .btn-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  button.btn{
+    border:none;border-radius:8px;padding:10px 16px;cursor:pointer;
+    font-size:.85rem;font-weight:600;transition:.15s;
+  }
+  .btn-primary{background:var(--accent);color:#04243a}
+  .btn-primary:hover{filter:brightness(1.08)}
+  .btn-ok{background:var(--accent-2);color:#052e16}
+  .btn-ghost{background:transparent;border:1px solid var(--line);color:var(--txt)}
+  .btn-ghost:hover{border-color:var(--accent)}
+
+  /* ---- Tabelas ---- */
+  table{width:100%;border-collapse:collapse;font-size:.8rem;margin-top:8px}
+  th,td{border:1px solid var(--line);padding:7px 9px;text-align:right}
+  th{background:var(--panel-2);color:var(--txt);text-align:right;font-weight:600}
+  td.lbl,th.lbl{text-align:left}
+  tr:nth-child(even) td{background:rgba(255,255,255,.02)}
+  .table-scroll{overflow-x:auto}
+
+  /* ---- Tags / indicadores ---- */
+  .tag{display:inline-block;font-size:.68rem;padding:2px 7px;border-radius:20px;
+    font-weight:600;vertical-align:middle}
+  .tag-mock{background:rgba(168,85,247,.18);color:#d8b4fe;border:1px solid var(--mock)}
+  .tag-manual{background:rgba(56,189,248,.15);color:#7dd3fc;border:1px solid var(--accent)}
+  .tag-pub{background:rgba(34,197,94,.15);color:#86efac;border:1px solid var(--accent-2)}
+
+  /* ---- Resumo executivo ---- */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:8px}
+  .kpi{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:12px}
+  .kpi .k{font-size:.72rem;color:var(--txt-dim)}
+  .kpi .v{font-size:1.15rem;font-weight:700;margin-top:3px}
+  .kpi .v.green{color:var(--accent-2)}
+  .kpi .v.blue{color:var(--accent)}
+
+  /* ---- Áreas de premissas / alertas ---- */
+  .assump{background:var(--panel-2);border:1px dashed var(--line);border-radius:8px;
+    padding:12px;font-size:.8rem}
+  .assump ul{margin:6px 0 0;padding-left:18px}
+  .alerts .alert{padding:8px 12px;border-radius:7px;font-size:.8rem;margin:6px 0}
+  .alert.info{background:rgba(56,189,248,.1);border:1px solid var(--accent)}
+  .alert.warn{background:rgba(245,158,11,.1);border:1px solid var(--warn);color:#fde68a}
+  .alert.err{background:rgba(239,68,68,.1);border:1px solid var(--danger);color:#fecaca}
+
+  /* ---- Memória de cálculo (texto) ---- */
+  .memo{white-space:pre-wrap;font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+    font-size:.78rem;background:var(--bg);border:1px solid var(--line);border-radius:8px;
+    padding:12px;max-height:340px;overflow:auto}
+
+  /* ---- Canvas gráficos ---- */
+  canvas{background:var(--bg);border:1px solid var(--line);border-radius:8px;width:100%;height:auto}
+  .chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+
+  /* ---- Fontes oficiais ---- */
+  .sources a{color:var(--accent);font-size:.8rem;display:block;margin:3px 0}
+
+  .muted{color:var(--txt-dim)}
+  .small{font-size:.75rem}
+  hr{border:none;border-top:1px solid var(--line);margin:14px 0}
+  details summary{cursor:pointer;color:var(--accent);font-size:.85rem;margin:6px 0}
+</style>
+</head>
+<body>
+<header class="app-head">
+  <h1>⚖️ Calculadora de Precatórios e Ativos Judiciais <span class="tag tag-mock">MVP / DEMO</span></h1>
+  <p>Ferramenta financeira para análise de precatórios federais, estaduais/municipais e ativos judiciais — racional de cálculo transparente.</p>
+</header>
+
+<div class="wrap">
+
+  <!-- Aviso jurídico global -->
+  <div class="legal-banner">
+    <strong>⚠️ Aviso:</strong> esta é uma <strong>ferramenta financeira</strong> e <strong>não substitui análise jurídica</strong>.
+    As regras da <strong>EC 136/2025</strong> e de atualização de precatórios dependem de regulamentação, CNJ, tribunal competente e situação específica do ente devedor.
+    Todos os índices e projeções aqui usados são <span class="tag tag-mock">mock/demo</span> e devem ser substituídos por fontes oficiais antes de qualquer uso real.
+  </div>
+
+  <!-- ============ ABAS ============ -->
+  <div class="tabs" id="tabs">
+    <button class="tab-btn active" data-tab="ativo">A · Dados do ativo</button>
+    <button class="tab-btn" data-tab="indices">B · Índices históricos</button>
+    <button class="tab-btn" data-tab="proj">C · Projeções macro</button>
+    <button class="tab-btn" data-tab="muni">D · Prec. municipais/estaduais</button>
+    <button class="tab-btn" data-tab="fed">E · Prec. federais</button>
+    <button class="tab-btn" data-tab="ativojud">F · Ativos judiciais</button>
+    <button class="tab-btn" data-tab="ec136">EC 136/25</button>
+    <button class="tab-btn" data-tab="result">Resultados</button>
+  </div>
+
+  <!-- ===================================================== -->
+  <!-- MÓDULO A — DADOS DO ATIVO                             -->
+  <!-- ===================================================== -->
+  <section class="tab-panel active" data-tab="ativo">
+    <div class="card">
+      <h2>Módulo A — Dados do ativo</h2>
+      <p class="desc">Identificação do crédito. Estes dados alimentam todos os módulos de cálculo.</p>
+      <div class="grid">
+        <div class="field">
+          <label>Tipo de ativo</label>
+          <select id="a_tipo">
+            <option value="prec_muni">Precatório municipal/estadual</option>
+            <option value="prec_fed">Precatório federal</option>
+            <option value="ativo_jud">Ativo judicial (não inscrito)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Ente devedor</label>
+          <select id="a_ente">
+            <option value="uniao">União</option>
+            <option value="estado">Estado</option>
+            <option value="municipio">Município</option>
+            <option value="autarquia">Autarquia/fundação/outro</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Nome do ente devedor</label>
+          <input id="a_nome_ente" placeholder="Ex.: Estado de SP" />
+        </div>
+        <div class="field">
+          <label>Tribunal</label>
+          <input id="a_tribunal" placeholder="Ex.: TJSP / TRF3" />
+        </div>
+        <div class="field">
+          <label>Nº do processo/precatório</label>
+          <input id="a_processo" placeholder="0000000-00.0000.0.00.0000" />
+        </div>
+        <div class="field">
+          <label>Natureza</label>
+          <select id="a_natureza">
+            <option value="alimentar">Alimentar</option>
+            <option value="comum">Comum</option>
+            <option value="tributario">Tributário</option>
+            <option value="indenizatorio">Indenizatório</option>
+            <option value="trab_prev">Trabalhista/previdenciário</option>
+            <option value="outros">Outros</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Valor base (R$)</label>
+          <input id="a_valor" type="number" step="0.01" min="0" placeholder="100000.00" />
+          <span class="err">Valor deve ser maior que zero.</span>
+        </div>
+        <div class="field">
+          <label>Data-base do valor</label>
+          <input id="a_data_base" type="date" />
+          <span class="err">Data-base inválida.</span>
+        </div>
+        <div class="field">
+          <label>Data de expedição do precatório</label>
+          <input id="a_data_exped" type="date" />
+        </div>
+        <div class="field">
+          <label>Ano de orçamento</label>
+          <input id="a_ano_orc" type="number" min="2000" max="2100" placeholder="2026" />
+          <span class="err">Informe o ano de orçamento.</span>
+        </div>
+        <div class="field">
+          <label>Tipo do ano de orçamento</label>
+          <select id="a_ano_orc_tipo">
+            <option value="manual">Manual</option>
+            <option value="premissa">Premissa</option>
+            <option value="realizado">Realizado</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Data esperada de pagamento</label>
+          <input id="a_data_pgto" type="date" />
+        </div>
+        <div class="field">
+          <label>Data de corte para atualização</label>
+          <input id="a_data_corte" type="date" />
+          <span class="err">Data de corte anterior à data-base.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <!-- MÓDULO B — ÍNDICES HISTÓRICOS                         -->
+  <!-- ===================================================== -->
+  <section class="tab-panel" data-tab="indices">
+    <div class="card">
+      <h2>Módulo B — Índices históricos <span class="tag tag-mock">dados mock/demo</span></h2>
+      <p class="desc">
+        Séries de Selic, IPCA, IPCA-E e INPC. Na versão MVP os valores são <strong>fictícios (mock)</strong>,
+        servindo apenas para demonstrar o mecanismo de cálculo. Estruturado para futura conexão com
+        BCB/SGS e IBGE/SIDRA. Você pode editar qualquer célula manualmente.
+      </p>
+      <div class="alerts">
+        <div class="alert warn" id="b_status">
+          ⓘ Dados não carregados de fonte oficial — usando série <strong>mock/demo</strong>. Preencha manualmente ou conecte API.
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="b_reload_mock">Recarregar série mock</button>
+        <button class="btn btn-ghost" id="b_try_api" title="Tentativa de API (placeholder)">Tentar carregar API (placeholder)</button>
+      </div>
+      <div class="table-scroll">
+        <table id="b_table">
+          <thead>
+            <tr>
+              <th class="lbl">Ano/Mês (referência)</th>
+              <th>Selic mês (%)</th>
+              <th>IPCA mês (%)</th>
+              <th>IPCA-E mês (%)</th>
+              <th>INPC mês (%)</th>
+            </tr>
+          </thead>
+          <tbody><!-- preenchido via JS --></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <!-- MÓDULO C — PROJEÇÕES MACRO                            -->
+  <!-- ===================================================== -->
+  <section class="tab-panel" data-tab="proj">
+    <div class="card">
+      <h2>Módulo C — Projeções macro <span class="tag tag-mock">mock/demo</span></h2>
+      <p class="desc">
+        Projeções anuais de Selic, IPCA, INPC e IPCA-E. Escolha a origem por linha. Valores iniciais são
+        <strong>fictícios</strong>. Não representam o Boletim Focus nem qualquer fonte oficial.
+      </p>
+      <div class="field" style="max-width:260px">
+        <label>Modo de projeção padrão</label>
+        <select id="c_modo">
+          <option value="manual">Manual (editar tabela)</option>
+          <option value="fixa">Taxa fixa customizada</option>
+          <option value="publica">Pública (placeholder mock)</option>
+        </select>
+      </div>
+      <div class="grid" id="c_fixa_box" style="display:none">
+        <div class="field"><label>Selic fixa a.a. (%)</label><input id="c_fix_selic" type="number" step="0.01" value="10"/></div>
+        <div class="field"><label>IPCA fixa a.a. (%)</label><input id="c_fix_ipca" type="number" step="0.01" value="4"/></div>
+        <div class="field"><label>INPC fixa a.a. (%)</label><input id="c_fix_inpc" type="number" step="0.01" value="4"/></div>
+        <div class="field"><label>IPCA-E fixa a.a. (%)</label><input id="c_fix_ipcae" type="number" step="0.01" value="4"/></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="c_apply_fixa">Aplicar taxa fixa à tabela</button>
+      </div>
+      <div class="table-scroll">
+        <table id="c_table">
+          <thead>
+            <tr>
+              <th class="lbl">Ano</th>
+              <th>Selic proj. (% a.a.)</th>
+              <th>IPCA proj. (% a.a.)</th>
+              <th>INPC proj. (% a.a.)</th>
+              <th>IPCA-E proj. (% a.a.)</th>
+              <th class="lbl">Fonte</th>
+              <th class="lbl">Tipo</th>
+            </tr>
+          </thead>
+          <tbody><!-- preenchido via JS --></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <!-- MÓDULO D — PRECATÓRIOS MUNICIPAIS/ESTADUAIS           -->
+  <!-- ===================================================== -->
+  <section class="tab-panel" data-tab="muni">
+    <div class="card">
+      <h2>Módulo D — Precatórios municipais/estaduais</h2>
+      <p class="desc">
+        Estimativa de fila e prazo considerando regime de pagamento vinculado à RCL.
+        Os percentuais da EC 136/25 ficam na aba <strong>“EC 136/25”</strong> e são <strong>editáveis</strong>.
+      </p>
+      <div class="grid">
+        <div class="field"><label>RCL do ente (R$)</label><input id="d_rcl" type="number" step="0.01" min="0" placeholder="10000000000"/><span class="err">RCL não pode ser vazia.</span></div>
+        <div class="field"><label>Estoque total de precatórios (R$)</label><input id="d_estoque_total" type="number" step="0.01" min="0" placeholder="5000000000"/></div>
+        <div class="field"><label>Estoque em mora (R$)</label><input id="d_estoque_mora" type="number" step="0.01" min="0" placeholder="2000000000"/></div>
+        <div class="field"><label>Fila total estimada (R$)</label><input id="d_fila_total" type="number" step="0.01" min="0" placeholder="5000000000"/></div>
+        <div class="field"><label>Posição do precatório na fila (R$ à frente)</label><input id="d_posicao" type="number" step="0.01" min="0" placeholder="1500000000"/></div>
+        <div class="field"><label>Valor anual destinado (R$) <span class="small muted">(opcional)</span></label><input id="d_valor_anual" type="number" step="0.01" min="0" placeholder="auto via % RCL"/></div>
+        <div class="field"><label>Taxa de desconto p/ VP (% a.a.)</label><input id="d_taxa_desc" type="number" step="0.01" min="0" value="12"/><span class="err">Taxa não pode ser negativa.</span></div>
+        <div class="field"><label>Regime aplicável</label>
+          <select id="d_regime">
+            <option value="ec136">EC 136/25</option>
+            <option value="geral">Regra geral</option>
+            <option value="especial">Regime especial</option>
+            <option value="manual">Manual/customizado</option>
+          </select>
+        </div>
+        <div class="field"><label>Ano inicial de pagamento</label><input id="d_ano_ini" type="number" min="2000" max="2100" value="2026"/></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <!-- MÓDULO E — PRECATÓRIOS FEDERAIS                       -->
+  <!-- ===================================================== -->
+  <section class="tab-panel" data-tab="fed">
+    <div class="card">
+      <h2>Módulo E — Precatórios federais</h2>
+      <p class="desc">Atualização e separação entre principal, correção e juros. Cenário “no orçamento” × “atraso”.</p>
+      <div class="grid">
+        <div class="field"><label>Índice de correção</label>
+          <select id="e_indice">
+            <option value="ipcae">IPCA-E</option>
+            <option value="ipca">IPCA</option>
+            <option value="inpc">INPC</option>
+            <option value="selic">Selic (engloba correção+juros)</option>
+            <option value="manual">Manual</option>
+          </select>
+          <span class="err">Selecione um índice.</span>
+        </div>
+        <div class="field"><label>Fator de correção manual (se aplicável)</label><input id="e_fator_manual" type="number" step="0.0001" min="0" placeholder="ex.: 1.25"/></div>
+        <div class="field"><label>Juros de mora (% a.m. simples)</label><input id="e_juros_am" type="number" step="0.01" min="0" value="0.5"/><span class="err">Juros não podem ser negativos.</span></div>
+        <div class="field"><label>Data inicial dos juros</label><input id="e_juros_ini" type="date"/></div>
+        <div class="field"><label>Superpreferência/prioridade</label>
+          <select id="e_prioridade"><option value="nao">Não</option><option value="sim">Sim (idoso/doença grave/PCD)</option></select>
+        </div>
+        <div class="field"><label>Deságio/acordo (%)</label><input id="e_desagio" type="number" step="0.01" min="0" max="100" value="0"/><span class="err">Percentual deve estar entre 0 e 100.</span></div>
+        <div class="field"><label>Atraso estimado além do orçamento (meses)</label><input id="e_atraso_meses" type="number" min="0" value="0"/></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <!-- MÓDULO F — ATIVOS JUDICIAIS                           -->
+  <!-- ===================================================== -->
+  <section class="tab-panel" data-tab="ativojud">
+    <div class="card">
+      <h2>Módulo F — Ativos judiciais</h2>
+      <p class="desc">Cálculo flexível com racional financeiro detalhado. Use quando o crédito ainda não está inscrito em precatório.</p>
+      <div class="grid">
+        <div class="field"><label>Índice de correção</label>
+          <select id="f_indice">
+            <option value="ipca">IPCA</option><option value="ipcae">IPCA-E</option>
+            <option value="inpc">INPC</option><option value="selic">Selic</option><option value="manual">Outro/manual</option>
+          </select>
+        </div>
+        <div class="field"><label>Fator de correção manual</label><input id="f_fator_manual" type="number" step="0.0001" min="0" placeholder="ex.: 1.30"/></div>
+        <div class="field"><label>Juros de mora</label>
+          <select id="f_juros_tipo">
+            <option value="1">1% a.m. simples</option>
+            <option value="0.5">0,5% a.m. simples</option>
+            <option value="selic">Selic</option>
+            <option value="manual">Outro/manual</option>
+          </select>
+        </div>
+        <div class="field"><label>Juros manual (% a.m.)</label><input id="f_juros_manual" type="number" step="0.01" min="0" placeholder="ex.: 1"/></div>
+        <div class="field"><label>Data inicial dos juros</label><input id="f_juros_ini" type="date"/></div>
+        <div class="field"><label>Capitalização</label>
+          <select id="f_capit"><option value="simples">Simples</option><option value="composta">Composta (se juridicamente aplicável)</option></select>
+        </div>
+        <div class="field"><label>Honorários (R$)</label><input id="f_honor" type="number" step="0.01" min="0" value="0"/></div>
+        <div class="field"><label>Custas (R$)</label><input id="f_custas" type="number" step="0.01" min="0" value="0"/></div>
+        <div class="field"><label>Impostos (R$)</label><input id="f_impostos" type="number" step="0.01" min="0" value="0"/></div>
+        <div class="field"><label>Probabilidade de êxito (%)</label><input id="f_prob" type="number" step="0.01" min="0" max="100" value="100"/><span class="err">Entre 0 e 100.</span></div>
+        <div class="field"><label>Prazo esperado de recebimento (anos)</label><input id="f_prazo" type="number" step="0.1" min="0" value="3"/></div>
+        <div class="field"><label>Taxa de desconto p/ VP (% a.a.)</label><input id="f_taxa_desc" type="number" step="0.01" min="0" value="12"/><span class="err">Taxa não pode ser negativa.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <!-- EC 136/2025 — PARÂMETROS EDITÁVEIS                    -->
+  <!-- ===================================================== -->
+  <section class="tab-panel" data-tab="ec136">
+    <div class="card">
+      <h2>Parâmetros EC 136/25 <span class="tag tag-mock">valores demo — NÃO normativos</span></h2>
+      <div class="alerts">
+        <div class="alert warn">
+          <strong>Atenção:</strong> as regras da EC 136/2025 devem ser validadas conforme regulamentação aplicável, CNJ,
+          tribunal competente e situação específica do ente devedor. Esta calculadora é uma ferramenta financeira e não
+          substitui análise jurídica. <strong>Os percentuais abaixo são placeholders editáveis</strong> — não foram
+          extraídos automaticamente do texto oficial e devem ser conferidos no Planalto.
+        </div>
+      </div>
+      <div class="grid">
+        <div class="field"><label>% mínimo da RCL</label><input id="ec_pct_min" type="number" step="0.01" min="0" max="100" value="1"/><span class="hint">placeholder editável</span></div>
+        <div class="field"><label>% máximo da RCL</label><input id="ec_pct_max" type="number" step="0.01" min="0" max="100" value="5"/><span class="hint">placeholder editável</span></div>
+        <div class="field"><label>% aplicável ao ente (usado no cálculo)</label><input id="ec_pct_aplic" type="number" step="0.01" min="0" max="100" value="2"/><span class="err">Entre 0 e 100.</span></div>
+        <div class="field"><label>Base de cálculo da RCL</label>
+          <select id="ec_base_rcl"><option value="rcl_atual">RCL informada (Módulo D)</option><option value="rcl_media">Média dos últimos exercícios (manual)</option></select>
+        </div>
+        <div class="field"><label>% do fluxo para acordos</label><input id="ec_pct_acordo" type="number" step="0.01" min="0" max="100" value="40"/></div>
+        <div class="field"><label>% do fluxo para ordem cronológica</label><input id="ec_pct_crono" type="number" step="0.01" min="0" max="100" value="60"/></div>
+        <div class="field"><label>Deságio esperado em acordo (%)</label><input id="ec_desagio" type="number" step="0.01" min="0" max="100" value="30"/></div>
+        <div class="field"><label>Regra de transição</label>
+          <select id="ec_transicao"><option value="nenhuma">Nenhuma</option><option value="aplica">Aplica transição (manual)</option></select>
+        </div>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label>Observações jurídicas / fonte normativa utilizada</label>
+        <textarea id="ec_obs" rows="3" placeholder="Descreva a base normativa usada e eventuais divergências. Ex.: 'Percentual conforme art. X da EC 136/25 — a confirmar no Planalto'."></textarea>
+      </div>
+      <h3>Fontes oficiais (preencher/validar manualmente)</h3>
+      <div class="sources">
+        <a href="https://www.planalto.gov.br/ccivil_03/constituicao/emendas/emc/emc136.htm" target="_blank" rel="noopener">Planalto — EC 136/2025</a>
+        <a href="https://www.cnj.jus.br/" target="_blank" rel="noopener">CNJ</a>
+        <a href="https://www3.bcb.gov.br/sgspub/" target="_blank" rel="noopener">Banco Central — SGS (séries temporais)</a>
+        <a href="https://sidra.ibge.gov.br/" target="_blank" rel="noopener">IBGE / SIDRA</a>
+        <span class="small muted">+ Slot para tribunal competente (preencher conforme o caso).</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <!-- RESULTADOS                                            -->
+  <!-- ===================================================== -->
+  <section class="tab-panel" data-tab="result">
+
+    <div class="card">
+      <div class="btn-row" style="margin-top:0">
+        <button class="btn btn-primary" id="btn_calc">▶ Calcular</button>
+        <button class="btn btn-ghost" id="btn_clear">Limpar</button>
+        <button class="btn btn-ok" id="btn_csv">Exportar CSV (memória)</button>
+        <button class="btn btn-ok" id="btn_json">Exportar JSON</button>
+        <button class="btn btn-ghost" id="btn_copy">Copiar memória de cálculo</button>
+      </div>
+    </div>
+
+    <!-- Alertas / validações -->
+    <div class="card alerts" id="result_alerts" style="display:none">
+      <h2>Alertas e limitações</h2>
+      <div id="alerts_box"></div>
+    </div>
+
+    <!-- Resumo executivo -->
+    <div class="card" id="result_summary" style="display:none">
+      <h2>Resumo executivo</h2>
+      <div class="kpis" id="kpis"></div>
+    </div>
+
+    <!-- Premissas usadas -->
+    <div class="card" id="result_assump" style="display:none">
+      <h2>Premissas usadas</h2>
+      <div class="assump" id="assump_box"></div>
+    </div>
+
+    <!-- Cenários -->
+    <div class="card" id="result_scen" style="display:none">
+      <h2>Cenários</h2>
+      <p class="desc">Conservador / Base / Otimista / Customizado — variando taxa de desconto e atualização.</p>
+      <div class="table-scroll"><table id="scen_table"><thead></thead><tbody></tbody></table></div>
+    </div>
+
+    <!-- Tabela de atualização anual -->
+    <div class="card" id="result_update" style="display:none">
+      <h2>Tabela de atualização</h2>
+      <div class="table-scroll"><table id="update_table"><thead></thead><tbody></tbody></table></div>
+    </div>
+
+    <!-- Fluxo de pagamento -->
+    <div class="card" id="result_flow" style="display:none">
+      <h2>Fluxo esperado de pagamento</h2>
+      <div class="table-scroll"><table id="flow_table"><thead></thead><tbody></tbody></table></div>
+    </div>
+
+    <!-- Gráficos -->
+    <div class="card" id="result_charts" style="display:none">
+      <h2>Gráficos</h2>
+      <div class="chart-grid">
+        <div><p class="small muted">Evolução do valor atualizado</p><canvas id="chart_value" width="520" height="240"></canvas></div>
+        <div><p class="small muted">Fluxo anual esperado</p><canvas id="chart_flow" width="520" height="240"></canvas></div>
+        <div><p class="small muted">Valor presente por cenário</p><canvas id="chart_scen" width="520" height="240"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Memória de cálculo -->
+    <div class="card" id="result_memo" style="display:none">
+      <h2>Memória de cálculo</h2>
+      <div class="memo" id="memo_box"></div>
+    </div>
+
+  </section>
+
+  <p class="small muted" style="margin-top:30px">
+    Versão MVP · sem bibliotecas externas · dados <span class="tag tag-mock">mock/demo</span>.
+    Veja sugestão de arquitetura de produção no README do repositório.
+  </p>
+</div>
+
+<script>
+/* =====================================================================
+   JAVASCRIPT — organizado em módulos lógicos:
+     1. Utilitários (datas, formatação, parsing)
+     2. Camada de DADOS (mock + ganchos para API real)
+     3. Motor de cálculo (funções financeiras modulares)
+     4. Validações
+     5. Orquestração por módulo (A–F)
+     6. Renderização (resultados, tabelas, gráficos)
+     7. Exportação (CSV / JSON / copiar)
+     8. UI (abas, eventos)
+   ===================================================================== */
+
+/* ============ 1. UTILITÁRIOS ============ */
+const Util = {
+  // Converte string de input numérico em Number, tratando vazio como null
+  num(id){ const el=document.getElementById(id); if(!el) return null;
+    const v=el.value.trim(); if(v==='') return null; const n=Number(v); return isNaN(n)?null:n; },
+  str(id){ const el=document.getElementById(id); return el? el.value.trim():''; },
+  date(id){ const el=document.getElementById(id); if(!el||!el.value) return null;
+    const d=new Date(el.value+'T00:00:00'); return isNaN(d.getTime())?null:d; },
+  // Diferença em meses (aproximada, base 30 ignorada — usa ano/mês civis + fração de dias)
+  monthsBetween(d1,d2){
+    if(!d1||!d2) return 0;
+    let m=(d2.getFullYear()-d1.getFullYear())*12+(d2.getMonth()-d1.getMonth());
+    m += (d2.getDate()-d1.getDate())/30; // fração de mês
+    return m;
+  },
+  yearsBetween(d1,d2){ return this.monthsBetween(d1,d2)/12; },
+  brl(n){ if(n===null||n===undefined||isNaN(n)) return '—';
+    return n.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); },
+  pct(n,dec=2){ if(n===null||isNaN(n)) return '—'; return n.toFixed(dec)+'%'; },
+  fator(n,dec=6){ if(n===null||isNaN(n)) return '—'; return n.toFixed(dec); },
+  fmtDate(d){ return d? d.toLocaleDateString('pt-BR'):'—'; }
+};
+
+/* ============ 2. CAMADA DE DADOS (MOCK + ganchos API) ============
+   IMPORTANTE: Os números abaixo são FICTÍCIOS (mock/demo). Não são
+   séries reais do BCB/IBGE. A função loadFromAPI() é um PLACEHOLDER:
+   numa versão de produção, ela faria fetch nas APIs públicas.
+*/
+const Dados = {
+  // série mensal mock para os últimos meses (apenas demonstração de mecânica)
+  mockMensal(){
+    // gera 24 referências mensais com taxas fictícias estáveis
+    const rows=[]; const hoje=new Date();
+    for(let i=23;i>=0;i--){
+      const d=new Date(hoje.getFullYear(),hoje.getMonth()-i,1);
+      const ref=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+      rows.push({ ref, selic:0.80, ipca:0.35, ipcae:0.34, inpc:0.33 }); // FICTÍCIO
+    }
+    return rows;
+  },
+  // projeções anuais mock (FICTÍCIAS)
+  mockProjecao(){
+    const ano=new Date().getFullYear(); const rows=[];
+    for(let y=0;y<5;y++){
+      rows.push({ ano:ano+y, selic:10, ipca:4, inpc:4, ipcae:4,
+        fonte:'mock/demo (NÃO oficial)', tipo:'mock' });
+    }
+    return rows;
+  },
+  // PLACEHOLDER de integração real. Não inventa dados: apenas avisa.
+  async loadFromAPI(){
+    /* Produção:
+       - Selic/IPCA/INPC: BCB/SGS  https://api.bcb.gov.br/dados/serie/...
+       - IPCA/IPCA-E/INPC: IBGE/SIDRA https://servicodados.ibge.gov.br/api/...
+       Em HTML puro pode haver CORS — recomenda-se proxy/backend.
+    */
+    return { ok:false, reason:'Integração de API não disponível no MVP offline.' };
+  }
+};
+
+/* ============ 3. MOTOR DE CÁLCULO (funções modulares) ============ */
+const Calc = {
+  // Fator acumulado a partir de taxas MENSAIS (%) — composto
+  fatorAcumuladoMensal(taxasPct){
+    return taxasPct.reduce((f,t)=> f*(1+(t/100)), 1);
+  },
+  // Correção monetária: valor × fator
+  corrigir(valor, fator){ return valor*fator; },
+  // Juros simples: base × taxa mensal × meses
+  jurosSimples(base, taxaMensalPct, meses){ return base*(taxaMensalPct/100)*meses; },
+  // Juros compostos: base × ((1+i)^meses - 1)
+  jurosCompostos(base, taxaMensalPct, meses){ return base*(Math.pow(1+taxaMensalPct/100,meses)-1); },
+  // Selic acumulada a partir de série mensal (%)
+  selicAcumulada(taxasPct){ return this.fatorAcumuladoMensal(taxasPct)-1; },
+  // Projeta valor futuro com taxa anual composta por N anos
+  valorFuturo(vp, taxaAnualPct, anos){ return vp*Math.pow(1+taxaAnualPct/100,anos); },
+  // Valor presente: fluxo / (1+i)^prazo
+  valorPresente(fluxo, taxaAnualPct, anos){ return fluxo/Math.pow(1+taxaAnualPct/100,anos); },
+  // Haircut/acordo: valor × (1 - desagio%)
+  aplicarDesagio(valor, desagioPct){ return valor*(1-desagioPct/100); },
+  // Converte taxa anual (%) em fator de correção mensal composto por N meses
+  fatorAnualParaMeses(taxaAnualPct, meses){ return Math.pow(1+taxaAnualPct/100, meses/12); }
+};
+
+/* ============ 4. VALIDAÇÕES ============ */
+const Valida = {
+  marcarErro(id, on){
+    const el=document.getElementById(id); if(!el) return;
+    const field=el.closest('.field'); if(field) field.classList.toggle('invalid',on);
+  },
+  // Retorna {errors:[], warnings:[]} conforme o tipo de ativo ativo
+  run(){
+    const errors=[], warnings=[];
+    const tipo=Util.str('a_tipo');
+
+    // limpa marcações
+    ['a_valor','a_data_base','a_ano_orc','a_data_corte','d_rcl','d_taxa_desc',
+     'e_indice','e_juros_am','e_desagio','f_prob','f_taxa_desc','ec_pct_aplic']
+      .forEach(id=>this.marcarErro(id,false));
+
+    const valor=Util.num('a_valor');
+    if(valor===null || valor<=0){ errors.push('Valor base nulo ou inválido.'); this.marcarErro('a_valor',true); }
+
+    const dBase=Util.date('a_data_base');
+    if(!dBase){ errors.push('Data-base inválida ou ausente.'); this.marcarErro('a_data_base',true); }
+
+    const dCorte=Util.date('a_data_corte');
+    if(dBase && dCorte && dCorte < dBase){
+      errors.push('Data de corte anterior à data-base.'); this.marcarErro('a_data_corte',true);
+    }
+
+    const dPgto=Util.date('a_data_pgto');
+    if(dBase && dPgto && dPgto < dBase){
+      warnings.push('Data esperada de pagamento anterior à data-base — verifique.');
+    }
+
+    if(Util.num('a_ano_orc')===null){
+      warnings.push('Ano de orçamento ausente — algumas estimativas usarão premissa.');
+      this.marcarErro('a_ano_orc',true);
+    }
+
+    // Específicas — Módulo D
+    if(tipo==='prec_muni'){
+      if(Util.num('d_rcl')===null || Util.num('d_rcl')<=0){
+        errors.push('RCL vazia/zerada (obrigatória para precatório municipal/estadual).');
+        this.marcarErro('d_rcl',true);
+      }
+      const td=Util.num('d_taxa_desc');
+      if(td!==null && td<0){ errors.push('Taxa de desconto negativa (Módulo D).'); this.marcarErro('d_taxa_desc',true); }
+      const pa=Util.num('ec_pct_aplic');
+      if(pa===null || pa<0 || pa>100){ errors.push('% RCL aplicável fora de 0–100 (EC 136/25).'); this.marcarErro('ec_pct_aplic',true); }
+    }
+
+    // Específicas — Módulo E
+    if(tipo==='prec_fed'){
+      if(!Util.str('e_indice')){ errors.push('Índice de correção ausente (federal).'); this.marcarErro('e_indice',true); }
+      const j=Util.num('e_juros_am'); if(j!==null && j<0){ errors.push('Juros negativos (federal).'); this.marcarErro('e_juros_am',true); }
+      const dg=Util.num('e_desagio'); if(dg!==null && (dg<0||dg>100)){ errors.push('Deságio fora de 0–100% (federal).'); this.marcarErro('e_desagio',true); }
+      if(Util.str('e_indice')==='manual' && (Util.num('e_fator_manual')===null)){
+        warnings.push('Índice manual selecionado sem fator informado — usando fator 1,0.');
+      }
+    }
+
+    // Específicas — Módulo F
+    if(tipo==='ativo_jud'){
+      const p=Util.num('f_prob'); if(p!==null && (p<0||p>100)){ errors.push('Probabilidade fora de 0–100% (ativo judicial).'); this.marcarErro('f_prob',true); }
+      const td=Util.num('f_taxa_desc'); if(td!==null && td<0){ errors.push('Taxa de desconto negativa (ativo judicial).'); this.marcarErro('f_taxa_desc',true); }
+      if(Util.str('f_indice')==='manual' && Util.num('f_fator_manual')===null){
+        warnings.push('Índice manual sem fator informado — usando fator 1,0.');
+      }
+    }
+    return {errors,warnings};
+  }
+};
+
+/* ============ 5. ORQUESTRAÇÃO POR MÓDULO ============
+   Cada função retorna um objeto de resultado padronizado, contendo:
+   {kpis, premissas[], alertas[], memo[], atualizacao[], fluxo[], cenarios[]}
+*/
+const Motor = {
+  // Obtém o fator de correção monetária conforme índice escolhido.
+  // No MVP usamos a PROJEÇÃO anual mock como proxy (claramente sinalizado).
+  fatorCorrecao(indice, dataBase, dataCorte, fatorManual, premissas, alertas){
+    const meses=Util.monthsBetween(dataBase,dataCorte);
+    if(indice==='manual'){
+      const f=fatorManual!==null?fatorManual:1;
+      premissas.push(`Correção: fator manual = ${Util.fator(f)} (informado pelo usuário).`);
+      return {fator:f, meses, base:'manual'};
+    }
+    // taxa anual proxy da projeção mock para o índice escolhido
+    const proj=State.projecao[0]||{};
+    const map={ipca:'ipca',ipcae:'ipcae',inpc:'inpc',selic:'selic'};
+    const taxaAnual=proj[map[indice]] ?? 4;
+    const f=Calc.fatorAnualParaMeses(taxaAnual,meses);
+    premissas.push(`Correção por ${indice.toUpperCase()} (proxy mock ${Util.pct(taxaAnual)} a.a.) por ${meses.toFixed(1)} meses → fator ${Util.fator(f)}.`);
+    alertas.push({tipo:'warn',txt:`Índice ${indice.toUpperCase()} usa série/projeção <strong>mock/demo</strong>, não oficial.`});
+    return {fator:f, meses, base:indice, taxaAnual};
+  },
+
+  // ---- Módulo E: precatório federal ----
+  calcFederal(base){
+    const premissas=[], alertas=[], memo=[];
+    const {valor,dBase,dCorte,dPgto}=base;
+    const indice=Util.str('e_indice');
+    const fatorManual=Util.num('e_fator_manual');
+    const jurosAm=Util.num('e_juros_am')??0;
+    const jurosIni=Util.date('e_juros_ini')||dBase;
+    const desagio=Util.num('e_desagio')??0;
+
+    const cor=this.fatorCorrecao(indice,dBase,dCorte,fatorManual,premissas,alertas);
+    const valorCorrigido=Calc.corrigir(valor,cor.fator);
+    const correcaoValor=valorCorrigido-valor;
+
+    let juros=0, mesesJuros=Util.monthsBetween(jurosIni,dCorte);
+    if(indice==='selic'){
+      juros=0;
+      premissas.push('Selic selecionada: NÃO somar juros de mora adicionais (Selic engloba correção + juros).');
+      alertas.push({tipo:'info',txt:'Como o índice é Selic, juros de mora foram zerados para evitar dupla contagem.'});
+    } else {
+      juros=Calc.jurosSimples(valorCorrigido,jurosAm,Math.max(0,mesesJuros));
+      premissas.push(`Juros de mora simples ${Util.pct(jurosAm)} a.m. por ${Math.max(0,mesesJuros).toFixed(1)} meses.`);
+    }
+    const valorBruto=valorCorrigido+juros;
+    const valorLiquido=Calc.aplicarDesagio(valorBruto,desagio);
+
+    // VP simples até data de pagamento (usa taxa de desconto = taxa fixa mock de 12%)
+    const anosPgto=dPgto? Math.max(0,Util.yearsBetween(dCorte,dPgto)):0;
+    const taxaDesc=12; premissas.push('Taxa de desconto p/ VP (federal): 12% a.a. (premissa MVP).');
+    const vp=Calc.valorPresente(valorLiquido,taxaDesc,anosPgto);
+
+    memo.push('=== PRECATÓRIO FEDERAL ===');
+    memo.push(`Valor original: ${Util.brl(valor)} (data-base ${Util.fmtDate(dBase)})`);
+    memo.push(`Fator de correção (${cor.base}): ${Util.fator(cor.fator)}`);
+    memo.push(`Valor corrigido: ${Util.brl(valorCorrigido)}  | correção: ${Util.brl(correcaoValor)}`);
+    memo.push(`Juros de mora: ${Util.brl(juros)}`);
+    memo.push(`Valor bruto: ${Util.brl(valorBruto)}`);
+    memo.push(`Deságio/acordo (${Util.pct(desagio)}): valor líquido ${Util.brl(valorLiquido)}`);
+    memo.push(`Valor presente (até ${Util.fmtDate(dPgto)}, ${anosPgto.toFixed(2)} anos @ ${taxaDesc}%): ${Util.brl(vp)}`);
+
+    const kpis=[
+      {k:'Valor original',v:Util.brl(valor)},
+      {k:'Valor corrigido',v:Util.brl(valorCorrigido),cls:'blue'},
+      {k:'Juros de mora',v:Util.brl(juros)},
+      {k:'Valor bruto',v:Util.brl(valorBruto),cls:'blue'},
+      {k:'Valor líquido (pós-acordo)',v:Util.brl(valorLiquido),cls:'green'},
+      {k:'Valor presente',v:Util.brl(vp),cls:'green'}
+    ];
+
+    return this._comum({kpis,premissas,alertas,memo,base,
+      principal:valor,correcao:correcaoValor,juros,bruto:valorBruto,liquido:valorLiquido,vp,taxaDesc,anosPgto});
+  },
+
+  // ---- Módulo F: ativo judicial ----
+  calcAtivoJud(base){
+    const premissas=[], alertas=[], memo=[];
+    const {valor,dBase,dCorte}=base;
+    const indice=Util.str('f_indice');
+    const fatorManual=Util.num('f_fator_manual');
+    const capit=Util.str('f_capit');
+    const jurosIni=Util.date('f_juros_ini')||dBase;
+
+    // juros
+    let jurosAm; const jt=Util.str('f_juros_tipo');
+    if(jt==='selic'){ jurosAm=null; }
+    else if(jt==='manual'){ jurosAm=Util.num('f_juros_manual')??0; }
+    else { jurosAm=Number(jt); }
+
+    const cor=this.fatorCorrecao(indice,dBase,dCorte,fatorManual,premissas,alertas);
+    const valorCorrigido=Calc.corrigir(valor,cor.fator);
+    const correcaoValor=valorCorrigido-valor;
+
+    const mesesJuros=Math.max(0,Util.monthsBetween(jurosIni,dCorte));
+    let juros=0;
+    if(jt==='selic'){
+      juros=0;
+      premissas.push('Juros = Selic: não somar índice de correção + Selic (evita dupla contagem). Juros zerados aqui.');
+      alertas.push({tipo:'info',txt:'Juros via Selic: confira se o índice de correção já não é Selic para não duplicar.'});
+    } else if(capit==='composta'){
+      juros=Calc.jurosCompostos(valorCorrigido,jurosAm,mesesJuros);
+      premissas.push(`Juros COMPOSTOS ${Util.pct(jurosAm)} a.m. por ${mesesJuros.toFixed(1)} meses.`);
+      alertas.push({tipo:'warn',txt:'Capitalização composta selecionada — confirmar cabimento jurídico no caso concreto.'});
+    } else {
+      juros=Calc.jurosSimples(valorCorrigido,jurosAm,mesesJuros);
+      premissas.push(`Juros SIMPLES ${Util.pct(jurosAm)} a.m. por ${mesesJuros.toFixed(1)} meses.`);
+    }
+
+    const valorBruto=valorCorrigido+juros;
+    const deducoes=(Util.num('f_honor')||0)+(Util.num('f_custas')||0)+(Util.num('f_impostos')||0);
+    const valorLiquido=valorBruto-deducoes;
+    const prob=(Util.num('f_prob')??100)/100;
+    const valorPonderado=valorLiquido*prob;
+    const taxaDesc=Util.num('f_taxa_desc')??12;
+    const prazo=Util.num('f_prazo')??0;
+    const vp=Calc.valorPresente(valorPonderado,taxaDesc,prazo);
+
+    premissas.push(`Deduções (honorários+custas+impostos): ${Util.brl(deducoes)}.`);
+    premissas.push(`Probabilidade de êxito: ${Util.pct(prob*100)} → valor ponderado.`);
+    premissas.push(`VP: prazo ${prazo} anos @ ${Util.pct(taxaDesc)} a.a.`);
+
+    // racional textual
+    const racional=`O valor original de ${Util.brl(valor)}, com data-base em ${Util.fmtDate(dBase)}, `
+      +`foi atualizado pelo índice ${indice.toUpperCase()} até ${Util.fmtDate(dCorte)}, resultando em fator acumulado de `
+      +`${Util.fator(cor.fator)}. Sobre o valor corrigido (${Util.brl(valorCorrigido)}) foram aplicados juros de mora `
+      +`${jt==='selic'?'via Selic (não somados aqui)':Util.pct(jurosAm)+' a.m. em regime '+capit} desde ${Util.fmtDate(jurosIni)}, `
+      +`resultando em ${Util.brl(juros)} de juros. O valor bruto estimado é ${Util.brl(valorBruto)}.`;
+
+    memo.push('=== ATIVO JUDICIAL ===');
+    memo.push(racional);
+    memo.push('—');
+    memo.push(`Valor corrigido: ${Util.brl(valorCorrigido)} | correção: ${Util.brl(correcaoValor)}`);
+    memo.push(`Juros: ${Util.brl(juros)} | bruto: ${Util.brl(valorBruto)}`);
+    memo.push(`Deduções: ${Util.brl(deducoes)} | líquido: ${Util.brl(valorLiquido)}`);
+    memo.push(`Ponderado por êxito (${Util.pct(prob*100)}): ${Util.brl(valorPonderado)}`);
+    memo.push(`Valor presente: ${Util.brl(vp)}`);
+
+    const kpis=[
+      {k:'Valor original',v:Util.brl(valor)},
+      {k:'Valor corrigido',v:Util.brl(valorCorrigido),cls:'blue'},
+      {k:'Juros de mora',v:Util.brl(juros)},
+      {k:'Valor bruto',v:Util.brl(valorBruto),cls:'blue'},
+      {k:'Valor líquido',v:Util.brl(valorLiquido)},
+      {k:'Ponderado por êxito',v:Util.brl(valorPonderado),cls:'green'},
+      {k:'Valor presente',v:Util.brl(vp),cls:'green'}
+    ];
+
+    return this._comum({kpis,premissas,alertas,memo,base,
+      principal:valor,correcao:correcaoValor,juros,bruto:valorBruto,liquido:valorPonderado,vp,taxaDesc,anosPgto:prazo});
+  },
+
+  // ---- Módulo D: precatório municipal/estadual (EC 136/25 editável) ----
+  calcMunicipal(base){
+    const premissas=[], alertas=[], memo=[];
+    const {valor,dBase,dCorte}=base;
+
+    // atualização básica do ativo (usa IPCA-E proxy mock)
+    const cor=this.fatorCorrecao('ipcae',dBase,dCorte,null,premissas,alertas);
+    const valorAtualizado=Calc.corrigir(valor,cor.fator);
+
+    const rcl=Util.num('d_rcl')||0;
+    const filaTotal=Util.num('d_fila_total')||Util.num('d_estoque_total')||0;
+    const posicao=Util.num('d_posicao')||0;
+    const pctAplic=(Util.num('ec_pct_aplic')??2)/100;
+    const valorAnualManual=Util.num('d_valor_anual');
+    const taxaDesc=Util.num('d_taxa_desc')??12;
+    const anoIni=Util.num('d_ano_ini')||new Date().getFullYear();
+
+    // pagamento anual estimado = % RCL (ou manual)
+    const pagAnual = valorAnualManual!==null ? valorAnualManual : rcl*pctAplic;
+    premissas.push(valorAnualManual!==null
+      ? `Pagamento anual: valor manual ${Util.brl(pagAnual)}.`
+      : `Pagamento anual estimado: ${Util.pct(pctAplic*100)} da RCL (EC 136/25 placeholder) = ${Util.brl(pagAnual)}.`);
+    alertas.push({tipo:'warn',txt:'Percentual da RCL é <strong>placeholder editável</strong> da EC 136/25 — validar no Planalto/CNJ.'});
+
+    // split acordo / cronológica
+    const pctAcordo=(Util.num('ec_pct_acordo')??40)/100;
+    const pctCrono=(Util.num('ec_pct_crono')??60)/100;
+    const paraAcordo=pagAnual*pctAcordo, paraCrono=pagAnual*pctCrono;
+    premissas.push(`Fluxo: ${Util.pct(pctAcordo*100)} acordos / ${Util.pct(pctCrono*100)} ordem cronológica.`);
+
+    // prazo estimado p/ pagar a posição na fila (ordem cronológica)
+    const prazoAnos = paraCrono>0 ? posicao/paraCrono : Infinity;
+    const anoProvavel = isFinite(prazoAnos)? Math.ceil(anoIni+prazoAnos) : '—';
+    premissas.push(`Prazo estimado (ordem cronológica): ${isFinite(prazoAnos)?prazoAnos.toFixed(1)+' anos':'indeterminado'}.`);
+
+    // métricas de estresse
+    const estoqueMora=Util.num('d_estoque_mora')||0;
+    const moraSobreRcl = rcl>0 ? estoqueMora/rcl : null;
+
+    // valor atualizado até pagamento + VP
+    const valorNoPgto = isFinite(prazoAnos)? Calc.valorFuturo(valorAtualizado, (cor.taxaAnual||4), prazoAnos) : valorAtualizado;
+    const desagio=(Util.num('ec_desagio')??30);
+    const valorLiquido=Calc.aplicarDesagio(valorNoPgto,desagio);
+    const vp = isFinite(prazoAnos)? Calc.valorPresente(valorLiquido,taxaDesc,prazoAnos) : valorLiquido;
+
+    memo.push('=== PRECATÓRIO MUNICIPAL/ESTADUAL (EC 136/25 — parâmetros editáveis) ===');
+    memo.push(`Valor original ${Util.brl(valor)} → atualizado ${Util.brl(valorAtualizado)} (fator ${Util.fator(cor.fator)})`);
+    memo.push(`RCL: ${Util.brl(rcl)} | pagamento anual: ${Util.brl(pagAnual)}`);
+    memo.push(`→ acordos: ${Util.brl(paraAcordo)} | → cronológica: ${Util.brl(paraCrono)}`);
+    memo.push(`Posição na fila: ${Util.brl(posicao)} | prazo estimado: ${isFinite(prazoAnos)?prazoAnos.toFixed(1)+' anos':'indeterminado'} | ano provável: ${anoProvavel}`);
+    if(moraSobreRcl!==null) memo.push(`Estoque em mora / RCL: ${Util.pct(moraSobreRcl*100)}`);
+    memo.push(`Valor no pagamento: ${Util.brl(valorNoPgto)} | pós-deságio ${Util.pct(desagio)}: ${Util.brl(valorLiquido)}`);
+    memo.push(`Valor presente @ ${Util.pct(taxaDesc)}: ${Util.brl(vp)}`);
+
+    const kpis=[
+      {k:'Valor atualizado (hoje)',v:Util.brl(valorAtualizado),cls:'blue'},
+      {k:'Pagamento anual (estimado)',v:Util.brl(pagAnual)},
+      {k:'Prazo estimado',v:isFinite(prazoAnos)?prazoAnos.toFixed(1)+' anos':'indeterminado'},
+      {k:'Ano provável de pagamento',v:String(anoProvavel)},
+      {k:'Mora / RCL',v:moraSobreRcl!==null?Util.pct(moraSobreRcl*100):'—'},
+      {k:'Valor no pagamento',v:Util.brl(valorNoPgto),cls:'blue'},
+      {k:'Valor líquido (pós-deságio)',v:Util.brl(valorLiquido),cls:'green'},
+      {k:'Valor presente',v:Util.brl(vp),cls:'green'}
+    ];
+
+    // fluxo de pagamento anual (até quitar a posição)
+    const fluxo=[]; let acumulado=0, ano=anoIni, guard=0;
+    while(acumulado<posicao && isFinite(prazoAnos) && guard<60){
+      const pago=Math.min(paraCrono, posicao-acumulado);
+      acumulado+=pago; fluxo.push({ano, pago, acumulado, pendente:Math.max(0,posicao-acumulado)});
+      ano++; guard++;
+    }
+
+    const r=this._comum({kpis,premissas,alertas,memo,base,
+      principal:valor,correcao:valorAtualizado-valor,juros:0,bruto:valorNoPgto,liquido:valorLiquido,vp,taxaDesc,anosPgto:isFinite(prazoAnos)?prazoAnos:0});
+    r.fluxo=fluxo;
+    return r;
+  },
+
+  // monta atualização anual + cenários comuns a todos os módulos
+  _comum(d){
+    const {base,principal,vp,taxaDesc,anosPgto}=d;
+    // tabela de atualização anual (do valor bruto projetado pela taxa de correção mock)
+    const proj=State.projecao[0]||{}; const taxaAnual=proj.ipcae??4;
+    const atualizacao=[]; const anos=Math.max(1,Math.ceil(anosPgto||3));
+    let v=d.bruto;
+    const anoBase=base.dCorte? base.dCorte.getFullYear() : new Date().getFullYear();
+    for(let i=0;i<=anos;i++){
+      atualizacao.push({ano:anoBase+i, valor:Calc.valorFuturo(d.bruto,taxaAnual,i)});
+    }
+
+    // cenários: variam taxa de desconto e correção
+    const cen=[];
+    const fluxoBase=d.liquido;
+    const mk=(nome,fatorCorr,addTaxa)=>{
+      const t=(taxaDesc||12)+addTaxa;
+      const fluxoAjust=fluxoBase*fatorCorr;
+      const vpC=Calc.valorPresente(fluxoAjust,t,anosPgto||0);
+      cen.push({nome, taxa:t, fluxo:fluxoAjust, vp:vpC});
+    };
+    mk('Conservador',0.92,+3);   // menos correção, mais desconto
+    mk('Base',1.00,0);
+    mk('Otimista',1.08,-3);      // mais correção, menos desconto
+    mk('Customizado',1.00,0);    // igual base — usuário ajusta inputs
+
+    d.atualizacao=atualizacao; d.cenarios=cen; d.fluxo=d.fluxo||[];
+    return d;
+  }
+};
+
+/* ============ ESTADO GLOBAL ============ */
+const State = { mensal:[], projecao:[], ultimoResultado:null };
+
+/* ============ 6. RENDERIZAÇÃO ============ */
+const UI = {
+  renderIndices(){
+    State.mensal=Dados.mockMensal();
+    const tb=document.querySelector('#b_table tbody'); tb.innerHTML='';
+    State.mensal.forEach((r,i)=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td class="lbl">${r.ref}</td>`+
+        ['selic','ipca','ipcae','inpc'].map(k=>
+          `<td><input data-i="${i}" data-k="${k}" value="${r[k]}" style="width:80px;background:transparent;border:none;color:var(--txt);text-align:right" type="number" step="0.01"></td>`).join('');
+      tb.appendChild(tr);
+    });
+    tb.querySelectorAll('input').forEach(inp=>inp.addEventListener('change',e=>{
+      State.mensal[+e.target.dataset.i][e.target.dataset.k]=Number(e.target.value);
+    }));
+  },
+  renderProjecao(){
+    State.projecao=Dados.mockProjecao();
+    const tb=document.querySelector('#c_table tbody'); tb.innerHTML='';
+    State.projecao.forEach((r,i)=>{
+      const tr=document.createElement('tr');
+      const tipoTag = r.tipo==='mock'?'<span class="tag tag-mock">mock</span>'
+        : r.tipo==='publica'?'<span class="tag tag-pub">pública</span>'
+        : '<span class="tag tag-manual">manual</span>';
+      tr.innerHTML=`<td class="lbl">${r.ano}</td>`+
+        ['selic','ipca','inpc','ipcae'].map(k=>
+          `<td><input data-i="${i}" data-k="${k}" value="${r[k]}" style="width:80px;background:transparent;border:none;color:var(--txt);text-align:right" type="number" step="0.01"></td>`).join('')+
+        `<td class="lbl">${r.fonte}</td><td class="lbl">${tipoTag}</td>`;
+      tb.appendChild(tr);
+    });
+    tb.querySelectorAll('input').forEach(inp=>inp.addEventListener('change',e=>{
+      const i=+e.target.dataset.i;
+      State.projecao[i][e.target.dataset.k]=Number(e.target.value);
+      State.projecao[i].tipo='manual'; State.projecao[i].fonte='manual (usuário)';
+      UI.renderProjecao(); // re-render para atualizar tag (preservando valores)
+    }));
+  },
+  show(id){ document.getElementById(id).style.display='block'; },
+
+  renderResultado(r){
+    State.ultimoResultado=r;
+    // alertas
+    this.show('result_alerts');
+    const ab=document.getElementById('alerts_box'); ab.innerHTML='';
+    (r.alertas||[]).forEach(a=>{
+      const div=document.createElement('div'); div.className='alert '+(a.tipo||'info'); div.innerHTML=a.txt; ab.appendChild(div);
+    });
+    if(!(r.alertas||[]).length){ ab.innerHTML='<div class="alert info">Sem alertas adicionais.</div>'; }
+
+    // KPIs
+    this.show('result_summary');
+    const k=document.getElementById('kpis'); k.innerHTML='';
+    r.kpis.forEach(item=>{
+      const d=document.createElement('div'); d.className='kpi';
+      d.innerHTML=`<div class="k">${item.k}</div><div class="v ${item.cls||''}">${item.v}</div>`;
+      k.appendChild(d);
+    });
+
+    // premissas
+    this.show('result_assump');
+    document.getElementById('assump_box').innerHTML=
+      '<strong>Premissas e mocks utilizados:</strong><ul>'+
+      (r.premissas||[]).map(p=>`<li>${p}</li>`).join('')+'</ul>';
+
+    // cenários
+    this.show('result_scen');
+    const st=document.querySelector('#scen_table');
+    st.querySelector('thead').innerHTML='<tr><th class="lbl">Cenário</th><th>Taxa desc. (% a.a.)</th><th>Fluxo estimado</th><th>Valor presente</th></tr>';
+    st.querySelector('tbody').innerHTML=(r.cenarios||[]).map(c=>
+      `<tr><td class="lbl">${c.nome}</td><td>${Util.pct(c.taxa)}</td><td>${Util.brl(c.fluxo)}</td><td>${Util.brl(c.vp)}</td></tr>`).join('');
+
+    // atualização
+    this.show('result_update');
+    const ut=document.querySelector('#update_table');
+    ut.querySelector('thead').innerHTML='<tr><th class="lbl">Ano</th><th>Valor atualizado (proj. mock)</th></tr>';
+    ut.querySelector('tbody').innerHTML=(r.atualizacao||[]).map(a=>
+      `<tr><td class="lbl">${a.ano}</td><td>${Util.brl(a.valor)}</td></tr>`).join('');
+
+    // fluxo
+    this.show('result_flow');
+    const ft=document.querySelector('#flow_table');
+    if((r.fluxo||[]).length){
+      ft.querySelector('thead').innerHTML='<tr><th class="lbl">Ano</th><th>Pago no ano</th><th>Acumulado</th><th>Pendente</th></tr>';
+      ft.querySelector('tbody').innerHTML=r.fluxo.map(f=>
+        `<tr><td class="lbl">${f.ano}</td><td>${Util.brl(f.pago)}</td><td>${Util.brl(f.acumulado)}</td><td>${Util.brl(f.pendente)}</td></tr>`).join('');
+    } else {
+      ft.querySelector('thead').innerHTML=''; ft.querySelector('tbody').innerHTML='<tr><td class="lbl muted">Fluxo de fila aplicável apenas a precatórios municipais/estaduais.</td></tr>';
+    }
+
+    // gráficos
+    this.show('result_charts');
+    Charts.line('chart_value', (r.atualizacao||[]).map(a=>({x:a.ano,y:a.valor})), '#38bdf8');
+    Charts.bars('chart_flow', (r.fluxo||[]).map(f=>({label:f.ano,value:f.pago})), '#22c55e');
+    Charts.bars('chart_scen', (r.cenarios||[]).map(c=>({label:c.nome,value:c.vp})), '#a855f7');
+
+    // memória
+    this.show('result_memo');
+    document.getElementById('memo_box').textContent=(r.memo||[]).join('\n');
+  }
+};
+
+/* ============ GRÁFICOS (canvas puro) ============ */
+const Charts = {
+  _setup(id){ const c=document.getElementById(id); const ctx=c.getContext('2d');
+    ctx.clearRect(0,0,c.width,c.height); return {c,ctx,W:c.width,H:c.height,pad:40}; },
+  line(id,data,color){
+    const {ctx,W,H,pad}=this._setup(id); if(!data.length) return;
+    const ys=data.map(d=>d.y), maxY=Math.max(...ys), minY=Math.min(...ys,0);
+    const sx=(W-2*pad)/Math.max(1,data.length-1), sy=(H-2*pad)/Math.max(1,(maxY-minY));
+    ctx.strokeStyle='#334155'; ctx.beginPath(); ctx.moveTo(pad,H-pad); ctx.lineTo(W-pad,H-pad); ctx.stroke();
+    ctx.strokeStyle=color; ctx.lineWidth=2; ctx.beginPath();
+    data.forEach((d,i)=>{ const x=pad+i*sx, y=H-pad-(d.y-minY)*sy; i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+    ctx.stroke();
+    ctx.fillStyle='#94a3b8'; ctx.font='10px sans-serif';
+    data.forEach((d,i)=>{ if(i%Math.ceil(data.length/6||1)===0) ctx.fillText(d.x, pad+i*sx-8, H-pad+14); });
+  },
+  bars(id,data,color){
+    const {ctx,W,H,pad}=this._setup(id); if(!data.length){ ctx.fillStyle='#94a3b8';ctx.font='12px sans-serif';ctx.fillText('Sem dados',pad,H/2); return; }
+    const maxV=Math.max(...data.map(d=>d.value),1);
+    const bw=(W-2*pad)/data.length*0.6, gap=(W-2*pad)/data.length;
+    ctx.strokeStyle='#334155'; ctx.beginPath(); ctx.moveTo(pad,H-pad); ctx.lineTo(W-pad,H-pad); ctx.stroke();
+    data.forEach((d,i)=>{
+      const h=(d.value/maxV)*(H-2*pad); const x=pad+i*gap+gap*0.2, y=H-pad-h;
+      ctx.fillStyle=color; ctx.fillRect(x,y,bw,h);
+      ctx.fillStyle='#94a3b8'; ctx.font='10px sans-serif'; ctx.fillText(String(d.label),x,H-pad+14);
+    });
+  }
+};
+
+/* ============ 7. EXPORTAÇÃO ============ */
+const Export = {
+  // coleta todos os inputs como objeto (para JSON)
+  coletarInputs(){
+    const obj={}; document.querySelectorAll('input,select,textarea').forEach(el=>{ if(el.id) obj[el.id]=el.value; });
+    return obj;
+  },
+  csv(){
+    const r=State.ultimoResultado;
+    if(!r){ alert('Calcule primeiro.'); return; }
+    let linhas=['Memória de cálculo (mock/demo)'];
+    linhas=linhas.concat(r.memo||[]);
+    linhas.push(''); linhas.push('Cenário;Taxa;Fluxo;ValorPresente');
+    (r.cenarios||[]).forEach(c=> linhas.push(`${c.nome};${c.taxa};${c.fluxo.toFixed(2)};${c.vp.toFixed(2)}`));
+    linhas.push(''); linhas.push('Ano;ValorAtualizado');
+    (r.atualizacao||[]).forEach(a=> linhas.push(`${a.ano};${a.valor.toFixed(2)}`));
+    this._download('memoria_calculo.csv', linhas.join('\n'), 'text/csv');
+  },
+  json(){
+    const r=State.ultimoResultado;
+    const payload={
+      _aviso:'Dados de índices/projeções são MOCK/DEMO, não oficiais.',
+      gerado_em:new Date().toISOString(),
+      inputs:this.coletarInputs(),
+      projecao_mock:State.projecao,
+      premissas:r?r.premissas:[],
+      alertas:r?(r.alertas||[]).map(a=>a.txt):[],
+      outputs:r?{kpis:r.kpis,cenarios:r.cenarios,atualizacao:r.atualizacao,fluxo:r.fluxo}:null
+    };
+    this._download('calculo_completo.json', JSON.stringify(payload,null,2), 'application/json');
+  },
+  copiarMemo(){
+    const r=State.ultimoResultado; if(!r){ alert('Calcule primeiro.'); return; }
+    const txt=(r.memo||[]).join('\n');
+    navigator.clipboard.writeText(txt).then(()=>alert('Memória de cálculo copiada.'),
+      ()=>alert('Não foi possível copiar automaticamente.'));
+  },
+  _download(nome,conteudo,mime){
+    const blob=new Blob([conteudo],{type:mime}); const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download=nome; a.click(); URL.revokeObjectURL(url);
+  }
+};
+
+/* ============ 8. UI: ABAS + EVENTOS ============ */
+function initTabs(){
+  document.querySelectorAll('.tab-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const tab=btn.dataset.tab;
+      document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b===btn));
+      document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.dataset.tab===tab));
+    });
+  });
+}
+
+// Função principal de cálculo: valida, roteia por tipo de ativo, renderiza
+function calcular(){
+  const {errors,warnings}=Valida.run();
+  // mostra erros e interrompe SOMENTE se houver erros bloqueantes
+  if(errors.length){
+    document.querySelector('.tab-btn[data-tab="result"]').click();
+    UI.show('result_alerts');
+    const ab=document.getElementById('alerts_box'); ab.innerHTML='';
+    errors.forEach(e=>{ const d=document.createElement('div'); d.className='alert err'; d.textContent='❌ '+e; ab.appendChild(d); });
+    warnings.forEach(w=>{ const d=document.createElement('div'); d.className='alert warn'; d.textContent='⚠️ '+w; ab.appendChild(d); });
+    return; // não trava silenciosamente — mostra o motivo
+  }
+
+  // base comum
+  const base={
+    valor:Util.num('a_valor'),
+    dBase:Util.date('a_data_base'),
+    dCorte:Util.date('a_data_corte')||new Date(),
+    dPgto:Util.date('a_data_pgto')
+  };
+
+  const tipo=Util.str('a_tipo');
+  let r;
+  if(tipo==='prec_fed') r=Motor.calcFederal(base);
+  else if(tipo==='ativo_jud') r=Motor.calcAtivoJud(base);
+  else r=Motor.calcMunicipal(base);
+
+  // anexa warnings não bloqueantes como alertas
+  warnings.forEach(w=> r.alertas.unshift({tipo:'warn',txt:'⚠️ '+w}));
+
+  document.querySelector('.tab-btn[data-tab="result"]').click();
+  UI.renderResultado(r);
+}
+
+function limpar(){
+  document.querySelectorAll('input').forEach(el=>{ if(el.type==='number'||el.type==='text'||el.type==='date') el.value=''; });
+  document.querySelectorAll('.field').forEach(f=>f.classList.remove('invalid'));
+  ['result_alerts','result_summary','result_assump','result_scen','result_update','result_flow','result_charts','result_memo']
+    .forEach(id=>document.getElementById(id).style.display='none');
+  State.ultimoResultado=null;
+  UI.renderIndices(); UI.renderProjecao();
+}
+
+/* ============ INICIALIZAÇÃO ============ */
+window.addEventListener('DOMContentLoaded',()=>{
+  initTabs();
+  UI.renderIndices();
+  UI.renderProjecao();
+
+  document.getElementById('btn_calc').addEventListener('click',calcular);
+  document.getElementById('btn_clear').addEventListener('click',limpar);
+  document.getElementById('btn_csv').addEventListener('click',()=>Export.csv());
+  document.getElementById('btn_json').addEventListener('click',()=>Export.json());
+  document.getElementById('btn_copy').addEventListener('click',()=>Export.copiarMemo());
+
+  document.getElementById('b_reload_mock').addEventListener('click',()=>{ UI.renderIndices();
+    document.getElementById('b_status').innerHTML='ⓘ Série <strong>mock/demo</strong> recarregada. Não é fonte oficial.'; });
+  document.getElementById('b_try_api').addEventListener('click',async()=>{
+    const res=await Dados.loadFromAPI();
+    document.getElementById('b_status').innerHTML = res.ok
+      ? '✓ Dados carregados de API.'
+      : '⚠️ '+res.reason+' — mantendo série mock/demo. (Em produção: conectar BCB/SGS e IBGE/SIDRA via backend.)';
+  });
+
+  // modo de projeção: mostra/oculta caixa de taxa fixa
+  document.getElementById('c_modo').addEventListener('change',e=>{
+    document.getElementById('c_fixa_box').style.display = e.target.value==='fixa'?'grid':'none';
+  });
+  document.getElementById('c_apply_fixa').addEventListener('click',()=>{
+    const s=Number(document.getElementById('c_fix_selic').value);
+    const i=Number(document.getElementById('c_fix_ipca').value);
+    const n=Number(document.getElementById('c_fix_inpc').value);
+    const e=Number(document.getElementById('c_fix_ipcae').value);
+    State.projecao.forEach(r=>{ r.selic=s;r.ipca=i;r.inpc=n;r.ipcae=e;r.tipo='manual';r.fonte='taxa fixa (usuário)'; });
+    UI.renderProjecao();
+  });
+});
+</script>
+</body>
+</html>
