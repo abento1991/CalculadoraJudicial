@@ -312,6 +312,37 @@
   </section>
 
   <!-- ===================================================== -->
+  <!-- TABELA CJF / SICOM (correção monetária — Justiça Fed.) -->
+  <!-- ===================================================== -->
+  <section class="tab-panel" data-tab="indices">
+    <div class="card">
+      <h2>Tabela CJF / SICOM — correção monetária <span class="tag tag-pub">Justiça Federal</span></h2>
+      <p class="desc">
+        Para cálculos antigos no padrão da <strong>Justiça Federal</strong> (Manual de Cálculos do CJF), a correção usa a
+        <strong>tabela oficial de números-índice acumulados</strong> do CJF. O fator entre duas datas =
+        <strong>NI(data final) ÷ NI(data-base)</strong>. Selecione o índice <strong>“CJF/SICOM”</strong> nos módulos para usá-la.
+      </p>
+      <div class="alerts">
+        <div class="alert warn" id="cjf_status">
+          ⓘ Tabela CJF/SICOM <strong>não carregada</strong>. Importe a tabela oficial abaixo (não há dados embutidos — nada é inventado).
+        </div>
+      </div>
+      <p class="small muted">
+        Cole abaixo a tabela oficial obtida em
+        <a href="https://sicom.cjf.jus.br/tabelaCorMor.php" target="_blank" rel="noopener" style="color:var(--accent)">sicom.cjf.jus.br/tabelaCorMor.php</a>.
+        Um registro por linha, no formato <code>AAAA-MM;numero_indice</code> ou <code>MM/AAAA;numero_indice</code>
+        (aceita vírgula decimal). Ex.: <code>1996-01;1,000000</code>
+      </p>
+      <textarea id="cjf_input" rows="5" placeholder="1994-07;0,567890&#10;1994-08;0,580123&#10;..." style="width:100%;background:var(--bg);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:8px;font-family:ui-monospace,monospace;font-size:.78rem"></textarea>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="cjf_load">Carregar tabela CJF</button>
+        <button class="btn btn-ghost" id="cjf_clear">Limpar tabela</button>
+      </div>
+      <p class="small muted" id="cjf_meta"></p>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
   <!-- MÓDULO C — PROJEÇÕES MACRO                            -->
   <!-- ===================================================== -->
   <section class="tab-panel" data-tab="indices">
@@ -409,6 +440,7 @@
             <option value="ipca">IPCA</option>
             <option value="inpc">INPC</option>
             <option value="selic">Selic (engloba correção+juros)</option>
+            <option value="cjf">CJF/SICOM (Justiça Federal)</option>
             <option value="manual">Manual</option>
           </select>
           <span class="err">Selecione um índice.</span>
@@ -440,7 +472,9 @@
         <div class="field"><label>Índice de correção</label>
           <select id="f_indice">
             <option value="ipca">IPCA</option><option value="ipcae">IPCA-E</option>
-            <option value="inpc">INPC</option><option value="selic">Selic</option><option value="manual">Outro/manual</option>
+            <option value="inpc">INPC</option><option value="selic">Selic</option>
+            <option value="cjf">CJF/SICOM (Justiça Federal)</option>
+            <option value="manual">Outro/manual</option>
           </select>
         </div>
         <div class="field"><label>Fator de correção manual</label><input id="f_fator_manual" type="number" step="0.0001" min="0" placeholder="ex.: 1.30"/></div>
@@ -698,6 +732,32 @@ const Dados = {
   carregarCache(){ try{ const s=localStorage.getItem(this.CACHE_KEY); return s?JSON.parse(s):null; }catch(e){ return null; } },
   limparCache(){ try{ localStorage.removeItem(this.CACHE_KEY); }catch(e){} },
 
+  // ---- Tabela CJF/SICOM (números-índice de correção monetária) ----
+  CACHE_CJF:'cj_tabela_cjf_v1',
+  // Faz o parse do texto colado. Aceita 'AAAA-MM;valor', 'MM/AAAA;valor' ou 'DD/MM/AAAA;valor'.
+  parseTabelaCJF(texto){
+    const tabela={}; let n=0;
+    (texto||'').split(/\r?\n/).forEach(line=>{
+      line=line.trim(); if(!line) return;
+      let parts=line.split(/[;\t]/).map(s=>s.trim());
+      if(parts.length<2){ const sp=line.split(/\s+/); if(sp.length>=2){ parts=[sp[0], sp[sp.length-1]]; } }
+      if(parts.length<2) return;
+      let ref=null, m;
+      if((m=parts[0].match(/^(\d{4})-(\d{1,2})/)))            ref=m[1]+'-'+m[2].padStart(2,'0');
+      else if((m=parts[0].match(/^(\d{1,2})\/(\d{4})$/)))      ref=m[2]+'-'+m[1].padStart(2,'0');
+      else if((m=parts[0].match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))) ref=m[3]+'-'+m[2].padStart(2,'0');
+      if(!ref) return;
+      const raw=parts[1];
+      const val = raw.indexOf(',')>=0 ? Number(raw.replace(/\./g,'').replace(',','.')) : Number(raw);
+      if(isNaN(val)) return;
+      tabela[ref]=val; n++;
+    });
+    return {tabela, n};
+  },
+  salvarCJF(tabela,meta){ try{ localStorage.setItem(this.CACHE_CJF, JSON.stringify({tabela,meta})); }catch(e){} },
+  carregarCJF(){ try{ const s=localStorage.getItem(this.CACHE_CJF); return s?JSON.parse(s):null; }catch(e){ return null; } },
+  limparCJF(){ try{ localStorage.removeItem(this.CACHE_CJF); }catch(e){} },
+
   // série mensal mock para os últimos meses (apenas demonstração de mecânica)
   mockMensal(){
     // gera 24 referências mensais com taxas fictícias estáveis
@@ -786,6 +846,33 @@ const Calc = {
     }
     return {rows, total:acum, nMeses:rows.length};
   },
+
+  // Correção pela TABELA DE NÚMEROS-ÍNDICE (padrão CJF/SICOM).
+  // Fator entre datas = NI(mês da data-corte) / NI(mês da data-base).
+  // Retorna detalhamento mês a mês {rows:[{ref,varPct,fatorMes,fatorAcum}], fator, usados, faltando, niBase}.
+  detalheCorrecaoNI(tabela, dBase, dCorte){
+    const rows=[]; let usados=0, faltando=0;
+    if(!tabela || !dBase || !dCorte) return {rows, fator:1, usados, faltando, niBase:null};
+    const refOf=(d)=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    const niBase=tabela[refOf(dBase)];
+    let prevNI=niBase, fator=1;
+    const cur=new Date(dBase.getFullYear(), dBase.getMonth(), 1);     // inclui o mês da data-base (fator 1)
+    const fim=new Date(dCorte.getFullYear(), dCorte.getMonth(), 1);
+    while(cur<=fim){
+      const ref=refOf(cur); const ni=tabela[ref];
+      if(ni==null || isNaN(ni)){ faltando++; rows.push({ref, varPct:null, fatorMes:1, fatorAcum:fator}); }
+      else {
+        usados++;
+        const fatorAcum = niBase ? ni/niBase : 1;
+        const varPct = (prevNI && !isNaN(prevNI)) ? (ni/prevNI-1)*100 : null;
+        const fatorMes = (prevNI && !isNaN(prevNI)) ? ni/prevNI : 1;
+        rows.push({ref, varPct, fatorMes, fatorAcum});
+        prevNI=ni; fator=fatorAcum;
+      }
+      cur.setMonth(cur.getMonth()+1);
+    }
+    return {rows, fator, usados, faltando, niBase};
+  },
   // Fator acumulado a partir de taxas MENSAIS (%) — composto
   fatorAcumuladoMensal(taxasPct){
     return taxasPct.reduce((f,t)=> f*(1+(t/100)), 1);
@@ -832,6 +919,7 @@ const Valida = {
     const p=Util.num('f_prob'); if(p!==null && (p<0||p>100)){ errors.push('Probabilidade fora de 0–100%.'); this.marcarErro('f_prob',true); }
     const td=Util.num('f_taxa_desc'); if(td!==null && td<0){ errors.push('Taxa de desconto negativa.'); this.marcarErro('f_taxa_desc',true); }
     if(Util.str('f_indice')==='manual' && Util.num('f_fator_manual')===null) warnings.push('Índice manual sem fator informado — usando fator 1,0.');
+    if(Util.str('f_indice')==='cjf' && !State.tabelaCJF) errors.push('Índice CJF/SICOM selecionado, mas a tabela não foi carregada (aba “Índices & Projeções”).');
     if(Util.str('f_juros_tipo')==='taxa_legal' && Util.num('f_taxa_legal')===null) warnings.push('Taxa legal selecionada sem valor — usando 0% a.m.');
     return {errors,warnings};
   },
@@ -862,6 +950,7 @@ const Valida = {
     const j=Util.num('e_juros_am'); if(j!==null && j<0){ errors.push('Juros negativos.'); this.marcarErro('e_juros_am',true); }
     const dg=Util.num('e_desagio'); if(dg!==null && (dg<0||dg>100)){ errors.push('Deságio fora de 0–100%.'); this.marcarErro('e_desagio',true); }
     if(Util.str('e_indice')==='manual' && Util.num('e_fator_manual')===null) warnings.push('Índice manual sem fator informado — usando fator 1,0.');
+    if(Util.str('e_indice')==='cjf' && !State.tabelaCJF) errors.push('Índice CJF/SICOM selecionado, mas a tabela não foi carregada (aba “Índices & Projeções”).');
     const dBase=Util.date('fe_data_base'), dPgto=Util.date('fe_data_pgto');
     if(dBase && dPgto && dPgto < dBase) warnings.push('Data esperada de pagamento anterior à data-base — verifique.');
     if(Util.num('fe_ano_orc')===null){ warnings.push('Ano de orçamento ausente — estimativas usarão premissa.'); this.marcarErro('fe_ano_orc',true); }
@@ -882,6 +971,21 @@ const Motor = {
       const f=fatorManual!==null?fatorManual:1;
       premissas.push(`Correção: fator manual = ${Util.fator(f)} (informado pelo usuário).`);
       return {fator:f, meses, base:'manual', tabela:[], fonteTab:'manual'};
+    }
+    // 0) Tabela CJF/SICOM (Justiça Federal) — números-índice importados
+    if(indice==='cjf'){
+      if(!State.tabelaCJF){
+        alertas.push({tipo:'err',txt:'Tabela <strong>CJF/SICOM</strong> não carregada — importe na aba “Índices & Projeções”.'});
+        premissas.push('Correção CJF/SICOM indisponível (tabela não carregada) — fator 1,0.');
+        return {fator:1, meses, base:'CJF (indisponível)', tabela:[], fonteTab:'CJF/SICOM (ausente)'};
+      }
+      const d=Calc.detalheCorrecaoNI(State.tabelaCJF, dataBase, dataCorte);
+      if(!d.niBase){
+        alertas.push({tipo:'err',txt:'Mês da data-base ausente na tabela CJF/SICOM — confira o período importado.'});
+      }
+      premissas.push(`Correção CJF/SICOM (Justiça Federal): fator = NI(corte)/NI(base) = ${Util.fator(d.fator)} (${d.usados} meses).`);
+      if(d.faltando>0) alertas.push({tipo:'warn',txt:`Tabela CJF/SICOM: ${d.faltando} mês(es) ausente(s) no período — fator usa apenas os meses disponíveis.`});
+      return {fator:d.fator, meses, base:'CJF/SICOM', taxaAnual:null, tabela:d.rows, fonteTab:'CJF/SICOM (importada)'};
     }
     // 1) Tenta usar a série REAL (BCB/SGS) carregada na aba "Índices"
     if(State.serieReal){
@@ -1164,7 +1268,7 @@ const Motor = {
 };
 
 /* ============ ESTADO GLOBAL ============ */
-const State = { mensal:[], projecao:[], serieReal:null, serieMeta:null, ultimoResultado:null };
+const State = { mensal:[], projecao:[], serieReal:null, serieMeta:null, tabelaCJF:null, tabelaCJFMeta:null, ultimoResultado:null };
 
 // Anualiza a projeção MENSAL (compõe os próximos N meses, até 12) para um índice.
 const Proj = {
@@ -1544,6 +1648,32 @@ async function carregarBCB(){
   }
 }
 
+// Atualiza o status/metadados da tabela CJF/SICOM
+function renderStatusCJF(){
+  const st=document.getElementById('cjf_status'), meta=document.getElementById('cjf_meta');
+  if(!st) return;
+  if(State.tabelaCJF && State.tabelaCJFMeta){
+    const m=State.tabelaCJFMeta;
+    st.className='alert info';
+    st.innerHTML='✓ Tabela <strong>CJF/SICOM</strong> carregada — disponível como índice de correção “CJF/SICOM”.';
+    meta.textContent=`${m.n} meses · período ${m.inicio} a ${m.fim} · importada em ${new Date(m.importada_em).toLocaleString('pt-BR')}.`;
+  } else {
+    st.className='alert warn';
+    st.innerHTML='ⓘ Tabela CJF/SICOM <strong>não carregada</strong>. Importe a tabela oficial abaixo (não há dados embutidos — nada é inventado).';
+    if(meta) meta.textContent='';
+  }
+}
+function carregarCJF(){
+  const {tabela,n}=Dados.parseTabelaCJF(document.getElementById('cjf_input').value);
+  const st=document.getElementById('cjf_status');
+  if(!n){ st.className='alert err'; st.innerHTML='⚠️ Nenhuma linha válida reconhecida. Use o formato AAAA-MM;valor ou MM/AAAA;valor.'; return; }
+  const refs=Object.keys(tabela).sort();
+  State.tabelaCJF=tabela;
+  State.tabelaCJFMeta={ n, inicio:refs[0], fim:refs[refs.length-1], importada_em:new Date().toISOString() };
+  Dados.salvarCJF(State.tabelaCJF, State.tabelaCJFMeta);
+  renderStatusCJF();
+}
+
 window.addEventListener('DOMContentLoaded',()=>{
   initTabs();
   // data final padrão = hoje
@@ -1551,8 +1681,12 @@ window.addEventListener('DOMContentLoaded',()=>{
   // tenta restaurar série real do cache local
   const cache=Dados.carregarCache();
   if(cache && cache.serie){ State.serieReal=cache.serie; State.serieMeta=cache.meta; }
+  // tenta restaurar a tabela CJF/SICOM do cache local
+  const cacheCJF=Dados.carregarCJF();
+  if(cacheCJF && cacheCJF.tabela){ State.tabelaCJF=cacheCJF.tabela; State.tabelaCJFMeta=cacheCJF.meta; }
   UI.renderIndices();
   UI.renderProjecao();
+  renderStatusCJF();
 
   // Botões "Calcular" por módulo (delegação via data-calc) e "Limpar módulo" (data-clear)
   document.querySelectorAll('[data-calc]').forEach(btn=>
@@ -1571,6 +1705,13 @@ window.addEventListener('DOMContentLoaded',()=>{
   });
   document.getElementById('b_clear_cache').addEventListener('click',()=>{
     Dados.limparCache(); State.serieReal=null; State.serieMeta=null; UI.renderIndices();
+  });
+
+  // Tabela CJF/SICOM
+  document.getElementById('cjf_load').addEventListener('click',carregarCJF);
+  document.getElementById('cjf_clear').addEventListener('click',()=>{
+    Dados.limparCJF(); State.tabelaCJF=null; State.tabelaCJFMeta=null;
+    document.getElementById('cjf_input').value=''; renderStatusCJF();
   });
 
   // modo de projeção: mostra/oculta caixa de taxa fixa
