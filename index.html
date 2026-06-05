@@ -188,8 +188,8 @@
   <!-- ===================================================== -->
   <section class="tab-panel active" data-tab="m1">
     <div class="card">
-      <h2>Módulo 1 — Ativos judiciais <span class="small muted">(crédito ainda não inscrito em precatório)</span></h2>
-      <p class="desc">Identificação e dados do ativo. O cálculo (correção + juros + valor presente) fica no card abaixo.</p>
+      <h2>Módulo 1 — Ativos judiciais <span class="small muted">(crédito judicial — não necessariamente vira precatório)</span></h2>
+      <p class="desc">Identificação e dados do ativo (crédito discutido em juízo, que pode ou não se tornar precatório). O cálculo (correção + juros + valor presente) fica no card abaixo.</p>
       <div class="grid">
         <div class="field"><label>Nome da parte / causa</label><input id="aj_nome" placeholder="Ex.: Fulano x Empresa"/></div>
         <div class="field"><label>Tribunal</label><input id="aj_tribunal" placeholder="Ex.: TJSP"/></div>
@@ -334,10 +334,12 @@
         (aceita vírgula decimal). Ex.: <code>1996-01;1,000000</code>
       </p>
       <textarea id="cjf_input" rows="5" placeholder="1994-07;0,567890&#10;1994-08;0,580123&#10;..." style="width:100%;background:var(--bg);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:8px;font-family:ui-monospace,monospace;font-size:.78rem"></textarea>
-      <div class="btn-row">
+      <div class="btn-row" style="align-items:center">
+        <label class="small muted">Coluna do valor: <input id="cjf_col" type="number" min="1" value="1" style="width:60px;background:var(--bg);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:4px"/></label>
         <button class="btn btn-primary" id="cjf_load">Carregar tabela CJF (correção)</button>
         <button class="btn btn-ghost" id="cjf_clear">Limpar correção</button>
       </div>
+      <p class="small muted">Se você colar a tabela inteira (data + coeficiente + juros), informe qual número usar: 1 = primeiro após a data.</p>
       <p class="small muted" id="cjf_meta"></p>
 
       <h3>Coluna de juros de mora (CJF/SICOM)</h3>
@@ -352,10 +354,12 @@
         Os juros entre duas datas = valor corrigido × [%acum(final) − %acum(início dos juros)].
       </p>
       <textarea id="cjf_juros_input" rows="5" placeholder="2000-01;6,00&#10;2000-02;6,50&#10;..." style="width:100%;background:var(--bg);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:8px;font-family:ui-monospace,monospace;font-size:.78rem"></textarea>
-      <div class="btn-row">
+      <div class="btn-row" style="align-items:center">
+        <label class="small muted">Coluna do valor: <input id="cjf_juros_col" type="number" min="1" value="1" style="width:60px;background:var(--bg);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:4px"/></label>
         <button class="btn btn-primary" id="cjf_juros_load">Carregar tabela CJF (juros)</button>
         <button class="btn btn-ghost" id="cjf_juros_clear">Limpar juros</button>
       </div>
+      <p class="small muted">Colando a tabela inteira, a coluna de juros costuma ser a 2ª (use 2).</p>
       <p class="small muted" id="cjf_juros_meta"></p>
     </div>
   </section>
@@ -753,23 +757,39 @@ const Dados = {
 
   // ---- Tabela CJF/SICOM (números-índice de correção monetária) ----
   CACHE_CJF:'cj_tabela_cjf_v1',
-  // Faz o parse do texto colado. Aceita 'AAAA-MM;valor', 'MM/AAAA;valor' ou 'DD/MM/AAAA;valor'.
-  parseTabelaCJF(texto){
+  // Parser tolerante do texto colado (correção OU juros). Reconhece:
+  //  - datas: AAAA-MM, AAAA/MM, MM/AAAA, DD/MM/AAAA, mês-nome/AAAA (jan/1994) e "JANEIRO 1994"
+  //  - separadores de coluna: espaço, tab, ';' ou '|' (vírgula é tratada como decimal pt-BR)
+  //  - valor: primeiro número após a data (aceita vírgula decimal, ponto de milhar e '%')
+  parseTabelaCJF(texto, col){
+    col = (col && col>=1) ? col : 1; // qual número após a data usar (1 = primeiro)
+    const MES={jan:1,fev:2,mar:3,abr:4,mai:5,jun:6,jul:7,ago:8,set:9,out:10,nov:11,dez:12,
+      janeiro:1,fevereiro:2,marco:3,abril:4,maio:5,junho:6,julho:7,agosto:8,setembro:9,outubro:10,novembro:11,dezembro:12};
+    const norm=(s)=>s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\.$/,'');
+    const parseNum=(raw)=>{
+      if(raw==null) return NaN;
+      let s=String(raw).trim().replace(/%/g,'');
+      if(s.indexOf(',')>=0) s=s.replace(/\./g,'').replace(',','.'); // pt-BR: ponto=milhar, vírgula=decimal
+      return Number(s);
+    };
     const tabela={}; let n=0;
     (texto||'').split(/\r?\n/).forEach(line=>{
       line=line.trim(); if(!line) return;
-      let parts=line.split(/[;\t]/).map(s=>s.trim());
-      if(parts.length<2){ const sp=line.split(/\s+/); if(sp.length>=2){ parts=[sp[0], sp[sp.length-1]]; } }
-      if(parts.length<2) return;
-      let ref=null, m;
-      if((m=parts[0].match(/^(\d{4})-(\d{1,2})/)))            ref=m[1]+'-'+m[2].padStart(2,'0');
-      else if((m=parts[0].match(/^(\d{1,2})\/(\d{4})$/)))      ref=m[2]+'-'+m[1].padStart(2,'0');
-      else if((m=parts[0].match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))) ref=m[3]+'-'+m[2].padStart(2,'0');
-      if(!ref) return;
-      const raw=parts[1];
-      const val = raw.indexOf(',')>=0 ? Number(raw.replace(/\./g,'').replace(',','.')) : Number(raw);
+      const toks=line.split(/[\s;\t|]+/).filter(Boolean); // não quebra em vírgula nem em '/'
+      let ano=null, mes=null, dateIdx=-1, m;
+      for(let i=0;i<toks.length;i++){
+        const t=toks[i];
+        if((m=t.match(/^(\d{4})[-\/](\d{1,2})$/)))        { ano=+m[1]; mes=+m[2]; dateIdx=i; break; }
+        if((m=t.match(/^(\d{1,2})\/(\d{4})$/)))            { mes=+m[1]; ano=+m[2]; dateIdx=i; break; }
+        if((m=t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) { mes=+m[2]; ano=+m[3]; dateIdx=i; break; }
+        if((m=t.match(/^([a-zçáéíóúâ]+)[\/.-](\d{4})$/i))){ const k=norm(m[1]); if(MES[k]){ mes=MES[k]; ano=+m[2]; dateIdx=i; break; } } // jan/1994
+        const k=norm(t); if(MES[k]!=null){ const nx=toks[i+1]; if(nx && /^\d{4}$/.test(nx)){ mes=MES[k]; ano=+nx; dateIdx=i+1; break; } } // JANEIRO 1994
+      }
+      if(ano==null || mes==null || mes<1 || mes>12) return; // linha sem data (cabeçalho etc.)
+      let val=NaN, count=0;
+      for(let j=dateIdx+1;j<toks.length;j++){ const v=parseNum(toks[j]); if(!isNaN(v)){ if(++count===col){ val=v; break; } } }
       if(isNaN(val)) return;
-      tabela[ref]=val; n++;
+      tabela[ano+'-'+String(mes).padStart(2,'0')]=val; n++;
     });
     return {tabela, n};
   },
@@ -1731,9 +1751,10 @@ function renderStatusCJF(){
   }
 }
 function carregarCJF(){
-  const {tabela,n}=Dados.parseTabelaCJF(document.getElementById('cjf_input').value);
+  const col=Number(document.getElementById('cjf_col').value)||1;
+  const {tabela,n}=Dados.parseTabelaCJF(document.getElementById('cjf_input').value, col);
   const st=document.getElementById('cjf_status');
-  if(!n){ st.className='alert err'; st.innerHTML='⚠️ Nenhuma linha válida reconhecida. Use o formato AAAA-MM;valor ou MM/AAAA;valor.'; return; }
+  if(!n){ st.className='alert err'; st.innerHTML='⚠️ Nenhuma linha válida reconhecida. Verifique o formato da data e a coluna do valor.'; return; }
   const refs=Object.keys(tabela).sort();
   State.tabelaCJF=tabela;
   State.tabelaCJFMeta={ n, inicio:refs[0], fim:refs[refs.length-1], importada_em:new Date().toISOString() };
@@ -1757,9 +1778,10 @@ function renderStatusCJFJuros(){
   }
 }
 function carregarCJFJuros(){
-  const {tabela,n}=Dados.parseTabelaCJF(document.getElementById('cjf_juros_input').value);
+  const col=Number(document.getElementById('cjf_juros_col').value)||1;
+  const {tabela,n}=Dados.parseTabelaCJF(document.getElementById('cjf_juros_input').value, col);
   const st=document.getElementById('cjf_juros_status');
-  if(!n){ st.className='alert err'; st.innerHTML='⚠️ Nenhuma linha válida reconhecida. Use o formato AAAA-MM;percentual_acumulado.'; return; }
+  if(!n){ st.className='alert err'; st.innerHTML='⚠️ Nenhuma linha válida reconhecida. Verifique o formato da data e a coluna do valor.'; return; }
   const refs=Object.keys(tabela).sort();
   State.tabelaCJFJuros=tabela;
   State.tabelaCJFJurosMeta={ n, inicio:refs[0], fim:refs[refs.length-1], importada_em:new Date().toISOString() };
