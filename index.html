@@ -705,7 +705,7 @@ const Dados = {
   // projeções anuais mock (FICTÍCIAS)
   mockProjecao(){
     const ano=new Date().getFullYear(); const rows=[];
-    for(let y=0;y<5;y++){
+    for(let y=0;y<11;y++){ // ano corrente + 10 anos
       rows.push({ ano:ano+y, selic:10, ipca:4, inpc:4, ipcae:4,
         fonte:'mock/demo (NÃO oficial)', tipo:'mock' });
     }
@@ -1453,6 +1453,7 @@ function limparModulo(tab){
     });
     panel.querySelectorAll('.field').forEach(f=>f.classList.remove('invalid'));
   });
+  if(typeof atualizarCamposCondicionais==='function') atualizarCamposCondicionais();
 }
 
 // Limpa tudo e oculta os resultados
@@ -1462,6 +1463,24 @@ function limpar(){
    'result_corr_mensal','result_juros_mensal','result_flow','result_charts','result_memo']
     .forEach(id=>document.getElementById(id).style.display='none');
   State.ultimoResultado=null;
+}
+
+// Mostra/oculta o .field de um input conforme condição (campos inteligentes)
+function toggleField(id, show){
+  const el=document.getElementById(id); if(!el) return;
+  const f=el.closest('.field'); if(f) f.style.display = show ? '' : 'none';
+}
+
+// Exibe apenas os campos de correção/juros que fazem sentido para a seleção atual.
+// Evita campos vazios confusos (fator manual, taxa legal, juros manual).
+function atualizarCamposCondicionais(){
+  // Módulo 1 — ativos judiciais
+  const fIndice=Util.str('f_indice'), fJuros=Util.str('f_juros_tipo');
+  toggleField('f_fator_manual', fIndice==='manual');
+  toggleField('f_taxa_legal',   fJuros==='taxa_legal');
+  toggleField('f_juros_manual', fJuros==='manual');
+  // Módulo 3 — federal (mesmo padrão para o fator manual)
+  toggleField('e_fator_manual', Util.str('e_indice')==='manual');
 }
 
 /* ============ INICIALIZAÇÃO ============ */
@@ -1526,6 +1545,13 @@ window.addEventListener('DOMContentLoaded',()=>{
     State.projecao.forEach(r=>{ r.selic=s;r.ipca=i;r.inpc=n;r.ipcae=e;r.tipo='manual';r.fonte='taxa fixa (usuário)'; });
     UI.renderProjecao();
   });
+
+  // campos inteligentes: mostra apenas o que faz sentido conforme a seleção
+  ['f_indice','f_juros_tipo','e_indice'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('change',atualizarCamposCondicionais);
+  });
+  atualizarCamposCondicionais();
 
   // normaliza os painéis ativos (cada aba agrupa mais de um painel)
   document.querySelector('.tab-btn[data-tab="m1"]').click();
