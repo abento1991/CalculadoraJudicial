@@ -369,12 +369,16 @@
       </p>
       <div class="grid">
         <div class="field"><label>RCL do ente (R$)</label><input id="d_rcl" type="number" step="0.01" min="0" placeholder="10000000000"/><span class="err">RCL não pode ser vazia.</span></div>
-        <div class="field"><label>Estoque total de precatórios (R$)</label><input id="d_estoque_total" type="number" step="0.01" min="0" placeholder="5000000000"/></div>
-        <div class="field"><label>Estoque em mora (R$)</label><input id="d_estoque_mora" type="number" step="0.01" min="0" placeholder="2000000000"/></div>
-        <div class="field"><label>Fila total estimada (R$)</label><input id="d_fila_total" type="number" step="0.01" min="0" placeholder="5000000000"/></div>
         <div class="field"><label>Posição do precatório na fila (R$ à frente)</label><input id="d_posicao" type="number" step="0.01" min="0" placeholder="1500000000"/></div>
-        <div class="field"><label>Valor anual destinado (R$) <span class="small muted">(opcional)</span></label><input id="d_valor_anual" type="number" step="0.01" min="0" placeholder="auto via % RCL"/></div>
+        <div class="field"><label>Base do pagamento anual</label>
+          <select id="d_modo_pag">
+            <option value="pct_rcl">% da RCL (EC 136/25)</option>
+            <option value="manual">Valor anual manual (R$)</option>
+          </select>
+        </div>
+        <div class="field"><label>Valor anual destinado (R$)</label><input id="d_valor_anual" type="number" step="0.01" min="0" placeholder="ex.: 200000000"/></div>
         <div class="field"><label>Taxa de desconto p/ VP (% a.a.)</label><input id="d_taxa_desc" type="number" step="0.01" min="0" value="12"/><span class="err">Taxa não pode ser negativa.</span></div>
+        <div class="field"><label>Ano inicial de pagamento</label><input id="d_ano_ini" type="number" min="2000" max="2100" value="2026"/></div>
         <div class="field"><label>Regime aplicável</label>
           <select id="d_regime">
             <option value="ec136">EC 136/25</option>
@@ -383,7 +387,9 @@
             <option value="manual">Manual/customizado</option>
           </select>
         </div>
-        <div class="field"><label>Ano inicial de pagamento</label><input id="d_ano_ini" type="number" min="2000" max="2100" value="2026"/></div>
+        <div class="field"><label>Estoque total de precatórios (R$) <span class="small muted">(opcional)</span></label><input id="d_estoque_total" type="number" step="0.01" min="0" placeholder="5000000000"/></div>
+        <div class="field"><label>Estoque em mora (R$) <span class="small muted">(opcional)</span></label><input id="d_estoque_mora" type="number" step="0.01" min="0" placeholder="2000000000"/></div>
+        <div class="field"><label>Fila total estimada (R$) <span class="small muted">(opcional)</span></label><input id="d_fila_total" type="number" step="0.01" min="0" placeholder="5000000000"/></div>
       </div>
     </div>
   </section>
@@ -829,10 +835,17 @@ const Valida = {
   // Módulo 2 — precatórios municipais/estaduais
   municipal(){
     const errors=[], warnings=[]; this.base('mu',errors);
-    ['d_rcl','d_taxa_desc','ec_pct_aplic','mu_ano_orc'].forEach(id=>this.marcarErro(id,false));
-    if(Util.num('d_rcl')===null || Util.num('d_rcl')<=0){ errors.push('RCL vazia/zerada (obrigatória para precatório municipal/estadual).'); this.marcarErro('d_rcl',true); }
+    ['d_rcl','d_taxa_desc','ec_pct_aplic','mu_ano_orc','d_valor_anual'].forEach(id=>this.marcarErro(id,false));
+    const modoPag=Util.str('d_modo_pag');
     const td=Util.num('d_taxa_desc'); if(td!==null && td<0){ errors.push('Taxa de desconto negativa.'); this.marcarErro('d_taxa_desc',true); }
-    const pa=Util.num('ec_pct_aplic'); if(pa===null || pa<0 || pa>100){ errors.push('% RCL aplicável fora de 0–100 (EC 136/25).'); this.marcarErro('ec_pct_aplic',true); }
+    if(modoPag==='manual'){
+      // exige valor anual; RCL passa a ser opcional (só usada na métrica mora/RCL)
+      if(Util.num('d_valor_anual')===null || Util.num('d_valor_anual')<=0){ errors.push('Valor anual destinado vazio (modo manual).'); this.marcarErro('d_valor_anual',true); }
+      if(Util.num('d_rcl')===null || Util.num('d_rcl')<=0) warnings.push('RCL não informada — métricas dependentes da RCL não serão calculadas.');
+    } else {
+      if(Util.num('d_rcl')===null || Util.num('d_rcl')<=0){ errors.push('RCL vazia/zerada (obrigatória no modo % da RCL).'); this.marcarErro('d_rcl',true); }
+      const pa=Util.num('ec_pct_aplic'); if(pa===null || pa<0 || pa>100){ errors.push('% RCL aplicável fora de 0–100 (EC 136/25).'); this.marcarErro('ec_pct_aplic',true); }
+    }
     if(Util.num('mu_ano_orc')===null){ warnings.push('Ano de orçamento ausente — estimativas usarão premissa.'); this.marcarErro('mu_ano_orc',true); }
     return {errors,warnings};
   },
@@ -1050,12 +1063,15 @@ const Motor = {
     const taxaDesc=Util.num('d_taxa_desc')??12;
     const anoIni=Util.num('d_ano_ini')||new Date().getFullYear();
 
-    // pagamento anual estimado = % RCL (ou manual)
-    const pagAnual = valorAnualManual!==null ? valorAnualManual : rcl*pctAplic;
-    premissas.push(valorAnualManual!==null
-      ? `Pagamento anual: valor manual ${Util.brl(pagAnual)}.`
-      : `Pagamento anual estimado: ${Util.pct(pctAplic*100)} da RCL (EC 136/25 placeholder) = ${Util.brl(pagAnual)}.`);
-    alertas.push({tipo:'warn',txt:'Percentual da RCL é <strong>placeholder editável</strong> da EC 136/25 — validar no Planalto/CNJ.'});
+    // pagamento anual: % da RCL (EC 136/25) OU valor manual, conforme seleção
+    const modoPag=Util.str('d_modo_pag');
+    const pagAnual = modoPag==='manual' ? (valorAnualManual||0) : rcl*pctAplic;
+    if(modoPag==='manual'){
+      premissas.push(`Pagamento anual: valor manual ${Util.brl(pagAnual)}.`);
+    } else {
+      premissas.push(`Pagamento anual estimado: ${Util.pct(pctAplic*100)} da RCL (EC 136/25 placeholder) = ${Util.brl(pagAnual)}.`);
+      alertas.push({tipo:'warn',txt:'Percentual da RCL é <strong>placeholder editável</strong> da EC 136/25 — validar no Planalto/CNJ.'});
+    }
 
     // split acordo / cronológica
     const pctAcordo=(Util.num('ec_pct_acordo')??40)/100;
@@ -1481,6 +1497,14 @@ function atualizarCamposCondicionais(){
   toggleField('f_juros_manual', fJuros==='manual');
   // Módulo 3 — federal (mesmo padrão para o fator manual)
   toggleField('e_fator_manual', Util.str('e_indice')==='manual');
+
+  // Módulo 2 — municipal/estadual
+  const modoPag=Util.str('d_modo_pag');
+  toggleField('d_valor_anual', modoPag==='manual');   // só no modo manual
+  toggleField('ec_pct_aplic',  modoPag!=='manual');   // % RCL só no modo % da RCL
+  // Parâmetros de referência da EC 136/25 só quando o regime é EC 136/25 (ou manual)
+  const regime=Util.str('d_regime'), ecRef=(regime==='ec136'||regime==='manual');
+  ['ec_pct_min','ec_pct_max','ec_base_rcl','ec_transicao'].forEach(id=>toggleField(id, ecRef));
 }
 
 /* ============ INICIALIZAÇÃO ============ */
@@ -1547,7 +1571,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   });
 
   // campos inteligentes: mostra apenas o que faz sentido conforme a seleção
-  ['f_indice','f_juros_tipo','e_indice'].forEach(id=>{
+  ['f_indice','f_juros_tipo','e_indice','d_modo_pag','d_regime'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.addEventListener('change',atualizarCamposCondicionais);
   });
