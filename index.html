@@ -450,6 +450,8 @@
         <div class="field"><label>Taxa legal (% a.m.)</label><input id="f_taxa_legal" type="number" step="0.01" min="0" placeholder="ex.: 1"/><span class="hint">parametrizável — varia por período/regime</span></div>
         <div class="field"><label>Juros manual (% a.m.)</label><input id="f_juros_manual" type="number" step="0.01" min="0" placeholder="ex.: 1"/></div>
         <div class="field"><label>Data inicial dos juros</label><input id="f_juros_ini" type="date"/></div>
+        <div class="field"><label>Multa (% sobre valor corrigido)</label><input id="f_multa_pct" type="number" step="0.01" min="0" max="100" value="0"/><span class="hint">ex.: 10% (art. 523 CPC) — acresce ao valor</span></div>
+        <div class="field"><label>Multa (R$ fixo)</label><input id="f_multa_valor" type="number" step="0.01" min="0" value="0"/></div>
         <div class="field"><label>Honorários (R$)</label><input id="f_honor" type="number" step="0.01" min="0" value="0"/></div>
         <div class="field"><label>Custas (R$)</label><input id="f_custas" type="number" step="0.01" min="0" value="0"/></div>
         <div class="field"><label>Impostos (R$)</label><input id="f_impostos" type="number" step="0.01" min="0" value="0"/></div>
@@ -555,6 +557,20 @@
     <div class="card" id="result_update" style="display:none">
       <h2>Tabela de atualização</h2>
       <div class="table-scroll"><table id="update_table"><thead></thead><tbody></tbody></table></div>
+    </div>
+
+    <!-- Memória mensal — Correção monetária -->
+    <div class="card" id="result_corr_mensal" style="display:none">
+      <h2>Memória mensal — Correção monetária</h2>
+      <p class="desc" id="corr_mensal_desc"></p>
+      <div class="table-scroll" style="max-height:380px"><table id="corr_mensal_table"><thead></thead><tbody></tbody></table></div>
+    </div>
+
+    <!-- Memória mensal — Juros de mora -->
+    <div class="card" id="result_juros_mensal" style="display:none">
+      <h2>Memória mensal — Juros de mora</h2>
+      <p class="desc" id="juros_mensal_desc"></p>
+      <div class="table-scroll" style="max-height:380px"><table id="juros_mensal_table"><thead></thead><tbody></tbody></table></div>
     </div>
 
     <!-- Fluxo de pagamento -->
@@ -717,6 +733,49 @@ const Calc = {
     }
     return {fator:f, usados, faltando};
   },
+
+  // Detalha a correção MÊS A MÊS (para conferência). Se `serie` for null,
+  // usa uma taxa mensal sintética derivada da taxa anual mock (taxaAnualMock).
+  // Retorna {rows:[{ref,varPct,fatorMes,fatorAcum}], fator, usados, faltando}.
+  detalheCorrecao(serie, indiceKey, dBase, dCorte, taxaAnualMock){
+    const rows=[]; let f=1, usados=0, faltando=0;
+    if(!dBase || !dCorte) return {rows, fator:1, usados, faltando};
+    const cur=new Date(dBase.getFullYear(), dBase.getMonth()+1, 1);
+    const fim=new Date(dCorte.getFullYear(), dCorte.getMonth(), 1);
+    const taxaMesMock = (taxaAnualMock!=null) ? (Math.pow(1+taxaAnualMock/100,1/12)-1)*100 : null;
+    while(cur<=fim){
+      const ref=cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0');
+      let varPct, fatorMes;
+      if(serie){
+        const rec=serie[ref]; const v=rec? rec[indiceKey] : undefined;
+        if(v===undefined||v===null||isNaN(v)){ faltando++; varPct=null; fatorMes=1; }
+        else { varPct=v; fatorMes=1+v/100; usados++; }
+      } else {
+        varPct=taxaMesMock; fatorMes=1+(taxaMesMock||0)/100; usados++;
+      }
+      f*=fatorMes;
+      rows.push({ref, varPct, fatorMes, fatorAcum:f});
+      cur.setMonth(cur.getMonth()+1);
+    }
+    return {rows, fator:f, usados, faltando};
+  },
+
+  // Detalha juros de mora SIMPLES mês a mês (sem capitalização).
+  // Cada mês acrescenta base × taxa. Retorna {rows, total, nMeses}.
+  detalheJurosSimples(base, taxaMensalPct, dIni, dFim){
+    const rows=[]; let acum=0;
+    if(!dIni || !dFim) return {rows, total:0, nMeses:0};
+    const cur=new Date(dIni.getFullYear(), dIni.getMonth()+1, 1);
+    const fim=new Date(dFim.getFullYear(), dFim.getMonth(), 1);
+    const jMes=base*(taxaMensalPct/100);
+    while(cur<=fim){
+      const ref=cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0');
+      acum+=jMes;
+      rows.push({ref, base, taxaMes:taxaMensalPct, jurosMes:jMes, jurosAcum:acum});
+      cur.setMonth(cur.getMonth()+1);
+    }
+    return {rows, total:acum, nMeses:rows.length};
+  },
   // Fator acumulado a partir de taxas MENSAIS (%) — composto
   fatorAcumuladoMensal(taxasPct){
     return taxasPct.reduce((f,t)=> f*(1+(t/100)), 1);
@@ -805,24 +864,24 @@ const Motor = {
     if(indice==='manual'){
       const f=fatorManual!==null?fatorManual:1;
       premissas.push(`Correção: fator manual = ${Util.fator(f)} (informado pelo usuário).`);
-      return {fator:f, meses, base:'manual'};
+      return {fator:f, meses, base:'manual', tabela:[], fonteTab:'manual'};
     }
     // 1) Tenta usar a série REAL (BCB/SGS) carregada na aba "Índices"
     if(State.serieReal){
-      const r=Calc.fatorAcumuladoPeriodo(State.serieReal, indice, dataBase, dataCorte);
-      if(r && r.usados>0){
-        premissas.push(`Correção por ${indice.toUpperCase()} — fator acumulado REAL (BCB/SGS), ${r.usados} meses de competência → ${Util.fator(r.fator)}.`);
-        if(r.faltando>0) alertas.push({tipo:'warn',txt:`Série ${indice.toUpperCase()}: ${r.faltando} mês(es) sem dado no período (ex.: IPCA-E só existe desde 2000). Fator usa apenas os meses disponíveis.`});
-        return {fator:r.fator, meses, base:indice+' (BCB/SGS)', taxaAnual:null};
+      const d=Calc.detalheCorrecao(State.serieReal, indice, dataBase, dataCorte, null);
+      if(d.usados>0){
+        premissas.push(`Correção por ${indice.toUpperCase()} — fator acumulado REAL (BCB/SGS), ${d.usados} meses de competência → ${Util.fator(d.fator)}.`);
+        if(d.faltando>0) alertas.push({tipo:'warn',txt:`Série ${indice.toUpperCase()}: ${d.faltando} mês(es) sem dado no período (ex.: IPCA-E só existe desde 2000). Fator usa apenas os meses disponíveis.`});
+        return {fator:d.fator, meses, base:indice+' (BCB/SGS)', taxaAnual:null, tabela:d.rows, fonteTab:'BCB/SGS'};
       }
     }
-    // 2) Fallback: projeção anual mock (sinalizado)
+    // 2) Fallback: projeção anual mock (sinalizado), distribuída em taxa mensal sintética
     const proj=State.projecao[0]||{};
     const taxaAnual=proj[indice] ?? 4;
-    const f=Calc.fatorAnualParaMeses(taxaAnual,meses);
-    premissas.push(`Correção por ${indice.toUpperCase()} (proxy mock ${Util.pct(taxaAnual)} a.a.) por ${meses.toFixed(1)} meses → fator ${Util.fator(f)}.`);
+    const d=Calc.detalheCorrecao(null, indice, dataBase, dataCorte, taxaAnual);
+    premissas.push(`Correção por ${indice.toUpperCase()} (proxy mock ${Util.pct(taxaAnual)} a.a.) por ${d.rows.length} meses → fator ${Util.fator(d.fator)}.`);
     alertas.push({tipo:'warn',txt:`Índice ${indice.toUpperCase()} usando série/projeção <strong>mock/demo</strong> — carregue os dados oficiais na aba “Índices”.`});
-    return {fator:f, meses, base:indice, taxaAnual};
+    return {fator:d.fator, meses, base:indice, taxaAnual, tabela:d.rows, fonteTab:'mock/demo'};
   },
 
   // ---- Módulo E: precatório federal ----
@@ -839,14 +898,15 @@ const Motor = {
     const valorCorrigido=Calc.corrigir(valor,cor.fator);
     const correcaoValor=valorCorrigido-valor;
 
-    let juros=0, mesesJuros=Util.monthsBetween(jurosIni,dCorte);
+    let juros=0, jurosTab=[];
     if(indice==='selic'){
       juros=0;
       premissas.push('Selic selecionada: NÃO somar juros de mora adicionais (Selic engloba correção + juros).');
       alertas.push({tipo:'info',txt:'Como o índice é Selic, juros de mora foram zerados para evitar dupla contagem.'});
     } else {
-      juros=Calc.jurosSimples(valorCorrigido,jurosAm,Math.max(0,mesesJuros));
-      premissas.push(`Juros de mora simples ${Util.pct(jurosAm)} a.m. por ${Math.max(0,mesesJuros).toFixed(1)} meses.`);
+      const jd=Calc.detalheJurosSimples(valorCorrigido, jurosAm, jurosIni, dCorte);
+      juros=jd.total; jurosTab=jd.rows;
+      premissas.push(`Juros de mora simples ${Util.pct(jurosAm)} a.m. por ${jd.nMeses} meses de competência.`);
     }
     const valorBruto=valorCorrigido+juros;
     const valorLiquido=Calc.aplicarDesagio(valorBruto,desagio);
@@ -874,8 +934,11 @@ const Motor = {
       {k:'Valor presente',v:Util.brl(vp),cls:'green'}
     ];
 
-    return this._comum({kpis,premissas,alertas,memo,base,
+    const r=this._comum({kpis,premissas,alertas,memo,base,
       principal:valor,correcao:correcaoValor,juros,bruto:valorBruto,liquido:valorLiquido,vp,taxaDesc,anosPgto});
+    r.correcaoMensal={rows:cor.tabela||[], valorBase:valor, fonte:cor.fonteTab, indice};
+    r.jurosMensal={rows:jurosTab, indice};
+    return r;
   },
 
   // ---- Módulo F: ativo judicial ----
@@ -913,10 +976,17 @@ const Motor = {
       jurosAm=Number(jt); jurosDesc=`${Util.pct(jurosAm)} a.m.`;
     }
     jurosAm=Math.max(0,jurosAm); // não admite juros negativos
-    const juros=Calc.jurosSimples(valorCorrigido,jurosAm,mesesJuros);
-    premissas.push(`Juros de mora SIMPLES (s/ capitalização) — ${jurosDesc} por ${mesesJuros.toFixed(1)} meses, sobre o valor corrigido.`);
+    const jd=Calc.detalheJurosSimples(valorCorrigido, jurosAm, jurosIni, dCorte);
+    const juros=jd.total, jurosTab=jd.rows;
+    premissas.push(`Juros de mora SIMPLES (s/ capitalização) — ${jurosDesc} por ${jd.nMeses} meses de competência, sobre o valor corrigido.`);
 
-    const valorBruto=valorCorrigido+juros;
+    // Multa (ações judiciais): % sobre o valor corrigido + valor fixo. Acresce ao crédito.
+    const multaPct=Util.num('f_multa_pct')||0;
+    const multaFixo=Util.num('f_multa_valor')||0;
+    const multa=valorCorrigido*(multaPct/100)+multaFixo;
+    if(multa>0) premissas.push(`Multa: ${Util.pct(multaPct)} sobre o valor corrigido (${Util.brl(valorCorrigido*(multaPct/100))}) + ${Util.brl(multaFixo)} fixo = ${Util.brl(multa)}.`);
+
+    const valorBruto=valorCorrigido+juros+multa;
     const deducoes=(Util.num('f_honor')||0)+(Util.num('f_custas')||0)+(Util.num('f_impostos')||0);
     const valorLiquido=valorBruto-deducoes;
     const prob=(Util.num('f_prob')??100)/100;
@@ -940,7 +1010,7 @@ const Motor = {
     memo.push(racional);
     memo.push('—');
     memo.push(`Valor corrigido: ${Util.brl(valorCorrigido)} | correção: ${Util.brl(correcaoValor)}`);
-    memo.push(`Juros: ${Util.brl(juros)} | bruto: ${Util.brl(valorBruto)}`);
+    memo.push(`Juros: ${Util.brl(juros)} | multa: ${Util.brl(multa)} | bruto: ${Util.brl(valorBruto)}`);
     memo.push(`Deduções: ${Util.brl(deducoes)} | líquido: ${Util.brl(valorLiquido)}`);
     memo.push(`Ponderado por êxito (${Util.pct(prob*100)}): ${Util.brl(valorPonderado)}`);
     memo.push(`Valor presente: ${Util.brl(vp)}`);
@@ -949,14 +1019,18 @@ const Motor = {
       {k:'Valor original',v:Util.brl(valor)},
       {k:'Valor corrigido',v:Util.brl(valorCorrigido),cls:'blue'},
       {k:'Juros de mora',v:Util.brl(juros)},
+      {k:'Multa',v:Util.brl(multa)},
       {k:'Valor bruto',v:Util.brl(valorBruto),cls:'blue'},
       {k:'Valor líquido',v:Util.brl(valorLiquido)},
       {k:'Ponderado por êxito',v:Util.brl(valorPonderado),cls:'green'},
       {k:'Valor presente',v:Util.brl(vp),cls:'green'}
     ];
 
-    return this._comum({kpis,premissas,alertas,memo,base,
+    const r=this._comum({kpis,premissas,alertas,memo,base,
       principal:valor,correcao:correcaoValor,juros,bruto:valorBruto,liquido:valorPonderado,vp,taxaDesc,anosPgto:prazo});
+    r.correcaoMensal={rows:cor.tabela||[], valorBase:valor, fonte:cor.fonteTab, indice};
+    r.jurosMensal={rows:jurosTab, indice};
+    return r;
   },
 
   // ---- Módulo D: precatório municipal/estadual (EC 136/25 editável) ----
@@ -1035,6 +1109,8 @@ const Motor = {
     const r=this._comum({kpis,premissas,alertas,memo,base,
       principal:valor,correcao:valorAtualizado-valor,juros:0,bruto:valorNoPgto,liquido:valorLiquido,vp,taxaDesc,anosPgto:isFinite(prazoAnos)?prazoAnos:0});
     r.fluxo=fluxo;
+    r.correcaoMensal={rows:cor.tabela||[], valorBase:valor, fonte:cor.fonteTab, indice:'ipcae'};
+    r.jurosMensal={rows:[], indice:'ipcae'};
     return r;
   },
 
@@ -1186,6 +1262,31 @@ const UI = {
     ut.querySelector('tbody').innerHTML=(r.atualizacao||[]).map(a=>
       `<tr><td class="lbl">${a.ano}</td><td>${Util.brl(a.valor)}</td></tr>`).join('');
 
+    // memória mensal — correção monetária (para conferência)
+    const cm=r.correcaoMensal;
+    if(cm && cm.rows && cm.rows.length){
+      this.show('result_corr_mensal');
+      document.getElementById('corr_mensal_desc').innerHTML=
+        `Índice <strong>${(cm.indice||'').toUpperCase()}</strong> · fonte <strong>${cm.fonte}</strong> · valor base ${Util.brl(cm.valorBase)}. `+
+        `Valor corrigido do mês = valor base × fator acumulado. Convenção: competência do mês seguinte à data-base até o mês da data de corte.`;
+      const t=document.querySelector('#corr_mensal_table');
+      t.querySelector('thead').innerHTML='<tr><th class="lbl">Competência</th><th>Variação (%)</th><th>Fator do mês</th><th>Fator acumulado</th><th>Valor corrigido</th></tr>';
+      t.querySelector('tbody').innerHTML=cm.rows.map(x=>
+        `<tr><td class="lbl">${x.ref}</td><td>${x.varPct==null?'<span class="muted">s/ dado</span>':Util.pct(x.varPct,4)}</td><td>${Util.fator(x.fatorMes)}</td><td>${Util.fator(x.fatorAcum)}</td><td>${Util.brl(cm.valorBase*x.fatorAcum)}</td></tr>`).join('');
+    } else { document.getElementById('result_corr_mensal').style.display='none'; }
+
+    // memória mensal — juros de mora (para conferência)
+    const jm=r.jurosMensal;
+    if(jm && jm.rows && jm.rows.length){
+      this.show('result_juros_mensal');
+      document.getElementById('juros_mensal_desc').innerHTML=
+        'Juros simples (sem capitalização): cada mês de competência acrescenta <strong>base × taxa</strong>. Base = valor corrigido.';
+      const t=document.querySelector('#juros_mensal_table');
+      t.querySelector('thead').innerHTML='<tr><th class="lbl">Competência</th><th>Base (corrigida)</th><th>Taxa do mês (%)</th><th>Juros do mês</th><th>Juros acumulado</th></tr>';
+      t.querySelector('tbody').innerHTML=jm.rows.map(x=>
+        `<tr><td class="lbl">${x.ref}</td><td>${Util.brl(x.base)}</td><td>${Util.pct(x.taxaMes,4)}</td><td>${Util.brl(x.jurosMes)}</td><td>${Util.brl(x.jurosAcum)}</td></tr>`).join('');
+    } else { document.getElementById('result_juros_mensal').style.display='none'; }
+
     // fluxo
     this.show('result_flow');
     const ft=document.querySelector('#flow_table');
@@ -1247,8 +1348,22 @@ const Export = {
   csv(){
     const r=State.ultimoResultado;
     if(!r){ alert('Calcule primeiro.'); return; }
-    let linhas=['Memória de cálculo (mock/demo)'];
+    let linhas=['Memória de cálculo'];
     linhas=linhas.concat(r.memo||[]);
+    // Memória mensal — correção
+    const cm=r.correcaoMensal;
+    if(cm && cm.rows && cm.rows.length){
+      linhas.push(''); linhas.push(`Memória mensal - Correção (indice=${(cm.indice||'').toUpperCase()}; fonte=${cm.fonte}; valorBase=${cm.valorBase})`);
+      linhas.push('Competencia;Variacao(%);FatorMes;FatorAcumulado;ValorCorrigido');
+      cm.rows.forEach(x=> linhas.push(`${x.ref};${x.varPct==null?'':x.varPct};${x.fatorMes.toFixed(6)};${x.fatorAcum.toFixed(6)};${(cm.valorBase*x.fatorAcum).toFixed(2)}`));
+    }
+    // Memória mensal — juros
+    const jm=r.jurosMensal;
+    if(jm && jm.rows && jm.rows.length){
+      linhas.push(''); linhas.push('Memória mensal - Juros de mora (simples, s/ capitalizacao)');
+      linhas.push('Competencia;Base;TaxaMes(%);JurosMes;JurosAcumulado');
+      jm.rows.forEach(x=> linhas.push(`${x.ref};${x.base.toFixed(2)};${x.taxaMes};${x.jurosMes.toFixed(2)};${x.jurosAcum.toFixed(2)}`));
+    }
     linhas.push(''); linhas.push('Cenário;Taxa;Fluxo;ValorPresente');
     (r.cenarios||[]).forEach(c=> linhas.push(`${c.nome};${c.taxa};${c.fluxo.toFixed(2)};${c.vp.toFixed(2)}`));
     linhas.push(''); linhas.push('Ano;ValorAtualizado');
@@ -1267,7 +1382,8 @@ const Export = {
       projecao_mock:State.projecao,
       premissas:r?r.premissas:[],
       alertas:r?(r.alertas||[]).map(a=>a.txt):[],
-      outputs:r?{kpis:r.kpis,cenarios:r.cenarios,atualizacao:r.atualizacao,fluxo:r.fluxo}:null
+      outputs:r?{kpis:r.kpis,cenarios:r.cenarios,atualizacao:r.atualizacao,fluxo:r.fluxo,
+        correcaoMensal:r.correcaoMensal,jurosMensal:r.jurosMensal}:null
     };
     this._download('calculo_completo.json', JSON.stringify(payload,null,2), 'application/json');
   },
@@ -1342,7 +1458,8 @@ function limparModulo(tab){
 // Limpa tudo e oculta os resultados
 function limpar(){
   ['m1','m2','m3'].forEach(limparModulo);
-  ['result_alerts','result_summary','result_assump','result_scen','result_update','result_flow','result_charts','result_memo']
+  ['result_alerts','result_summary','result_assump','result_scen','result_update',
+   'result_corr_mensal','result_juros_mensal','result_flow','result_charts','result_memo']
     .forEach(id=>document.getElementById(id).style.display='none');
   State.ultimoResultado=null;
 }
