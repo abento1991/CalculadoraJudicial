@@ -316,10 +316,11 @@
   <!-- ===================================================== -->
   <section class="tab-panel" data-tab="indices">
     <div class="card">
-      <h2>Projeções macro <span class="tag tag-mock">mock/demo</span></h2>
+      <h2>Projeções macro — visão mensal <span class="tag tag-mock">mock/demo</span></h2>
       <p class="desc">
-        Projeções anuais de Selic, IPCA, INPC e IPCA-E. Escolha a origem por linha. Valores iniciais são
-        <strong>fictícios</strong>. Não representam o Boletim Focus nem qualquer fonte oficial.
+        Projeções <strong>mês a mês</strong> de Selic, IPCA, INPC e IPCA-E (em <strong>% a.m.</strong>), para ~10 anos.
+        Valores iniciais são <strong>fictícios</strong> — não representam o Boletim Focus nem fonte oficial.
+        Defina taxas anuais e use <em>“Aplicar taxa fixa”</em> para preencher todos os meses, depois ajuste mês a mês se quiser.
       </p>
       <div class="field" style="max-width:260px">
         <label>Modo de projeção padrão</label>
@@ -336,17 +337,17 @@
         <div class="field"><label>IPCA-E fixa a.a. (%)</label><input id="c_fix_ipcae" type="number" step="0.01" value="4"/></div>
       </div>
       <div class="btn-row">
-        <button class="btn btn-ghost" id="c_apply_fixa">Aplicar taxa fixa à tabela</button>
+        <button class="btn btn-ghost" id="c_apply_fixa">Aplicar taxa fixa (a.a. → mensal) a todos os meses</button>
       </div>
-      <div class="table-scroll">
+      <div class="table-scroll" style="max-height:440px">
         <table id="c_table">
           <thead>
             <tr>
-              <th class="lbl">Ano</th>
-              <th>Selic proj. (% a.a.)</th>
-              <th>IPCA proj. (% a.a.)</th>
-              <th>INPC proj. (% a.a.)</th>
-              <th>IPCA-E proj. (% a.a.)</th>
+              <th class="lbl">Mês (ref.)</th>
+              <th>Selic proj. (% a.m.)</th>
+              <th>IPCA proj. (% a.m.)</th>
+              <th>INPC proj. (% a.m.)</th>
+              <th>IPCA-E proj. (% a.m.)</th>
               <th class="lbl">Fonte</th>
               <th class="lbl">Tipo</th>
             </tr>
@@ -708,11 +709,14 @@ const Dados = {
     }
     return rows;
   },
-  // projeções anuais mock (FICTÍCIAS)
+  // projeções MENSAIS mock (FICTÍCIAS) — taxas em % a.m. para ~10 anos
   mockProjecao(){
-    const ano=new Date().getFullYear(); const rows=[];
-    for(let y=0;y<11;y++){ // ano corrente + 10 anos
-      rows.push({ ano:ano+y, selic:10, ipca:4, inpc:4, ipcae:4,
+    const rows=[]; const hoje=new Date();
+    const am=(aa)=>(Math.pow(1+aa/100,1/12)-1)*100; // converte % a.a. -> % a.m.
+    for(let i=0;i<120;i++){ // 120 meses = 10 anos
+      const d=new Date(hoje.getFullYear(), hoje.getMonth()+i, 1);
+      const ref=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+      rows.push({ ref, selic:am(10), ipca:am(4), inpc:am(4), ipcae:am(4),
         fonte:'mock/demo (NÃO oficial)', tipo:'mock' });
     }
     return rows;
@@ -888,9 +892,8 @@ const Motor = {
         return {fator:d.fator, meses, base:indice+' (BCB/SGS)', taxaAnual:null, tabela:d.rows, fonteTab:'BCB/SGS'};
       }
     }
-    // 2) Fallback: projeção anual mock (sinalizado), distribuída em taxa mensal sintética
-    const proj=State.projecao[0]||{};
-    const taxaAnual=proj[indice] ?? 4;
+    // 2) Fallback: projeção MENSAL mock anualizada (sinalizado), redistribuída em taxa mensal sintética
+    const taxaAnual=Proj.anual(indice);
     const d=Calc.detalheCorrecao(null, indice, dataBase, dataCorte, taxaAnual);
     premissas.push(`Correção por ${indice.toUpperCase()} (proxy mock ${Util.pct(taxaAnual)} a.a.) por ${d.rows.length} meses → fator ${Util.fator(d.fator)}.`);
     alertas.push({tipo:'warn',txt:`Índice ${indice.toUpperCase()} usando série/projeção <strong>mock/demo</strong> — carregue os dados oficiais na aba “Índices”.`});
@@ -978,9 +981,8 @@ const Motor = {
       jurosAm=Util.num('f_taxa_legal')??0; jurosDesc=`taxa legal ${Util.pct(jurosAm)} a.m.`;
       alertas.push({tipo:'warn',txt:'Taxa legal é <strong>parametrizável</strong> e varia conforme período/regime — confirmar no caso concreto.'});
     } else if(jt==='selic_ipca'){
-      // Juros reais = Selic − IPCA (spread anual da projeção mock), convertido p/ mês.
-      const proj=State.projecao[0]||{};
-      const spreadAa=(proj.selic??0)-(proj.ipca??0);
+      // Juros reais = Selic − IPCA (spread anual da projeção mensal anualizada), convertido p/ mês.
+      const spreadAa=Proj.anual('selic')-Proj.anual('ipca');
       jurosAm=spreadAa/12; // aproximação linear a.a. → a.m.
       jurosDesc=`Selic−IPCA ≈ ${Util.pct(spreadAa)} a.a. (${Util.pct(jurosAm)} a.m.)`;
       alertas.push({tipo:'warn',txt:'Juros "Selic − IPCA" usam o spread da projeção <strong>mock/demo</strong>, não oficial.'});
@@ -1133,8 +1135,8 @@ const Motor = {
   // monta atualização anual + cenários comuns a todos os módulos
   _comum(d){
     const {base,principal,vp,taxaDesc,anosPgto}=d;
-    // tabela de atualização anual (do valor bruto projetado pela taxa de correção mock)
-    const proj=State.projecao[0]||{}; const taxaAnual=proj.ipcae??4;
+    // tabela de atualização anual (do valor bruto projetado pela projeção mensal anualizada)
+    const taxaAnual=Proj.anual('ipcae');
     const atualizacao=[]; const anos=Math.max(1,Math.ceil(anosPgto||3));
     let v=d.bruto;
     const anoBase=base.dCorte? base.dCorte.getFullYear() : new Date().getFullYear();
@@ -1163,6 +1165,16 @@ const Motor = {
 
 /* ============ ESTADO GLOBAL ============ */
 const State = { mensal:[], projecao:[], serieReal:null, serieMeta:null, ultimoResultado:null };
+
+// Anualiza a projeção MENSAL (compõe os próximos N meses, até 12) para um índice.
+const Proj = {
+  anual(indice){
+    const arr=State.projecao||[]; if(!arr.length) return 4;
+    const n=Math.min(12,arr.length); let f=1, used=0;
+    for(let i=0;i<n;i++){ const v=arr[i][indice]; if(v!=null && !isNaN(v)){ f*=(1+v/100); used++; } }
+    return used ? (Math.pow(f,12/used)-1)*100 : 4;
+  }
+};
 
 /* ============ 6. RENDERIZAÇÃO ============ */
 const UI = {
@@ -1216,25 +1228,29 @@ const UI = {
       if(meta) meta.textContent='';
     }
   },
+  _tagProj(t){ return t==='mock'?'<span class="tag tag-mock">mock</span>'
+    : t==='publica'?'<span class="tag tag-pub">pública</span>'
+    : '<span class="tag tag-manual">manual</span>'; },
   renderProjecao(){
-    State.projecao=Dados.mockProjecao();
+    // só gera mock na primeira vez; depois preserva as edições do usuário
+    if(!State.projecao || !State.projecao.length) State.projecao=Dados.mockProjecao();
     const tb=document.querySelector('#c_table tbody'); tb.innerHTML='';
     State.projecao.forEach((r,i)=>{
       const tr=document.createElement('tr');
-      const tipoTag = r.tipo==='mock'?'<span class="tag tag-mock">mock</span>'
-        : r.tipo==='publica'?'<span class="tag tag-pub">pública</span>'
-        : '<span class="tag tag-manual">manual</span>';
-      tr.innerHTML=`<td class="lbl">${r.ano}</td>`+
+      tr.innerHTML=`<td class="lbl">${r.ref}</td>`+
         ['selic','ipca','inpc','ipcae'].map(k=>
-          `<td><input data-i="${i}" data-k="${k}" value="${r[k]}" style="width:80px;background:transparent;border:none;color:var(--txt);text-align:right" type="number" step="0.01"></td>`).join('')+
-        `<td class="lbl">${r.fonte}</td><td class="lbl">${tipoTag}</td>`;
+          `<td><input data-i="${i}" data-k="${k}" value="${Number(r[k]).toFixed(4)}" style="width:88px;background:transparent;border:none;color:var(--txt);text-align:right" type="number" step="0.0001"></td>`).join('')+
+        `<td class="lbl" data-fonte="${i}">${r.fonte}</td><td class="lbl" data-tipo="${i}">${this._tagProj(r.tipo)}</td>`;
       tb.appendChild(tr);
     });
+    // edição em uma célula atualiza só aquela linha (preserva foco e performance c/ 120 meses)
     tb.querySelectorAll('input').forEach(inp=>inp.addEventListener('change',e=>{
       const i=+e.target.dataset.i;
       State.projecao[i][e.target.dataset.k]=Number(e.target.value);
       State.projecao[i].tipo='manual'; State.projecao[i].fonte='manual (usuário)';
-      UI.renderProjecao(); // re-render para atualizar tag (preservando valores)
+      const fc=tb.querySelector(`[data-fonte="${i}"]`), tc=tb.querySelector(`[data-tipo="${i}"]`);
+      if(fc) fc.textContent='manual (usuário)';
+      if(tc) tc.innerHTML=UI._tagProj('manual');
     }));
   },
   show(id){ document.getElementById(id).style.display='block'; },
@@ -1562,10 +1578,11 @@ window.addEventListener('DOMContentLoaded',()=>{
     document.getElementById('c_fixa_box').style.display = e.target.value==='fixa'?'grid':'none';
   });
   document.getElementById('c_apply_fixa').addEventListener('click',()=>{
-    const s=Number(document.getElementById('c_fix_selic').value);
-    const i=Number(document.getElementById('c_fix_ipca').value);
-    const n=Number(document.getElementById('c_fix_inpc').value);
-    const e=Number(document.getElementById('c_fix_ipcae').value);
+    const am=(aa)=>(Math.pow(1+aa/100,1/12)-1)*100; // a.a. -> a.m.
+    const s=am(Number(document.getElementById('c_fix_selic').value));
+    const i=am(Number(document.getElementById('c_fix_ipca').value));
+    const n=am(Number(document.getElementById('c_fix_inpc').value));
+    const e=am(Number(document.getElementById('c_fix_ipcae').value));
     State.projecao.forEach(r=>{ r.selic=s;r.ipca=i;r.inpc=n;r.ipcae=e;r.tipo='manual';r.fonte='taxa fixa (usuário)'; });
     UI.renderProjecao();
   });
